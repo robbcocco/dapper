@@ -1,0 +1,380 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../application/device/device_settings_notifier.dart';
+import '../../../application/library/library_notifier.dart';
+import '../../../application/library/sidebar_state.dart';
+import '../../../application/providers/providers.dart';
+import '../../../application/transfer/transfer_path_resolver.dart';
+import '../../../application/transfer/transfer_queue_notifier.dart';
+import '../../../core/constants/app_constants.dart';
+import '../../../core/theme/color_tokens.dart';
+import '../../../domain/models/album.dart';
+import '../../widgets/add_to_playlist_dialog.dart';
+import '../../widgets/cover_art_image.dart';
+import 'album_detail_page.dart';
+
+enum AlbumsPageMode { recent, all }
+
+class AlbumsPage extends ConsumerWidget {
+  const AlbumsPage({super.key, required this.mode});
+
+  final AlbumsPageMode mode;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Album detail takes highest priority.
+    final selectedAlbumId = ref.watch(selectedAlbumIdProvider);
+    if (selectedAlbumId != null) {
+      return AlbumDetailPage(albumId: selectedAlbumId);
+    }
+
+    // Artist drill-down only applies in the "all albums" section.
+    final selectedArtistId = ref.watch(selectedArtistIdProvider);
+    if (mode == AlbumsPageMode.all && selectedArtistId != null) {
+      return _ArtistAlbumsView(artistId: selectedArtistId);
+    }
+
+    if (mode == AlbumsPageMode.recent) {
+      final albums = ref.watch(recentAlbumsProvider);
+      return albums.when(
+        data: (list) => _AlbumGrid(albums: list),
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(
+            child: Text('$e',
+                style: const TextStyle(color: ColorTokens.textSecondary))),
+      );
+    }
+
+    // All albums — paginated.
+    return const _AllAlbumsView();
+  }
+}
+
+// ── Artist drill-down ─────────────────────────────────────────────────────────
+
+class _ArtistAlbumsView extends ConsumerWidget {
+  const _ArtistAlbumsView({required this.artistId});
+
+  final String artistId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final artistName = ref
+        .watch(artistsProvider)
+        .valueOrNull
+        ?.fold<String?>(null, (prev, a) => a.id == artistId ? a.name : prev);
+
+    final albums = ref.watch(albumsByArtistProvider(artistId));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Header ──────────────────────────────────────────────────────────────
+        Container(
+          padding: const EdgeInsets.fromLTRB(8, 8, 24, 8),
+          decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: ColorTokens.divider))),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios, size: 16),
+                onPressed: () =>
+                    ref.read(selectedArtistIdProvider.notifier).state = null,
+                color: ColorTokens.textSecondary,
+                tooltip: 'All Albums',
+              ),
+              if (artistName != null)
+                Expanded(
+                  child: Text(
+                    artistName,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: ColorTokens.textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+            ],
+          ),
+        ),
+
+        // Albums grid ─────────────────────────────────────────────────────────
+        Expanded(
+          child: albums.when(
+            data: (list) => list.isEmpty
+                ? const Center(
+                    child: Text('No albums',
+                        style: TextStyle(color: ColorTokens.textSecondary)))
+                : _AlbumGrid(albums: list),
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => Center(
+                child: Text('$e',
+                    style:
+                        const TextStyle(color: ColorTokens.textSecondary))),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── All albums with infinite scroll ──────────────────────────────────────────
+
+class _AllAlbumsView extends ConsumerStatefulWidget {
+  const _AllAlbumsView();
+
+  @override
+  ConsumerState<_AllAlbumsView> createState() => _AllAlbumsViewState();
+}
+
+class _AllAlbumsViewState extends ConsumerState<_AllAlbumsView> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_onScroll);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 500) {
+      ref.read(allAlbumsProvider.notifier).loadMore();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(allAlbumsProvider);
+
+    if (s.isLoading && s.albums.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (s.error != null && s.albums.isEmpty) {
+      return Center(
+          child: Text('${s.error}',
+              style: const TextStyle(color: ColorTokens.textSecondary)));
+    }
+
+    return CustomScrollView(
+      controller: _scrollController,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.all(24),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: AppConstants.albumCardSize + 16,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 0.75,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => _AlbumCard(album: s.albums[i]),
+              childCount: s.albums.length,
+            ),
+          ),
+        ),
+        if (s.isLoading)
+          const SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ── Static album grid (recent / artist views) ─────────────────────────────────
+
+class _AlbumGrid extends StatelessWidget {
+  const _AlbumGrid({required this.albums});
+
+  final List<Album> albums;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.all(24),
+          sliver: SliverGrid(
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              maxCrossAxisExtent: AppConstants.albumCardSize + 16,
+              mainAxisSpacing: 16,
+              crossAxisSpacing: 16,
+              childAspectRatio: 0.75,
+            ),
+            delegate: SliverChildBuilderDelegate(
+              (context, i) => _AlbumCard(album: albums[i]),
+              childCount: albums.length,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Album card ────────────────────────────────────────────────────────────────
+
+class _AlbumCard extends ConsumerWidget {
+  const _AlbumCard({required this.album});
+
+  final Album album;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final device = ref.watch(selectedDeviceProvider);
+    final settings =
+        device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
+    final isSynced = settings != null &&
+        albumExistsOnDevice(album.artist, album.name, album.year, settings);
+
+    return GestureDetector(
+      onTap: () =>
+          ref.read(selectedAlbumIdProvider.notifier).state = album.id,
+      onSecondaryTapUp: (d) => _showMenu(context, ref, device, d.globalPosition),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: AspectRatio(
+              aspectRatio: 1,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: CoverArtImage(
+                      coverArtId: album.coverArtId,
+                      size: AppConstants.albumCardSize.toInt(),
+                      borderRadius: 6,
+                    ),
+                  ),
+                  if (isSynced)
+                    Positioned(
+                      right: 5,
+                      bottom: 5,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade600,
+                          shape: BoxShape.circle,
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Colors.black26,
+                              blurRadius: 4,
+                            ),
+                          ],
+                        ),
+                        child: const Icon(Icons.check,
+                            size: 13, color: Colors.white),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            album.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: ColorTokens.textPrimary,
+            ),
+          ),
+          if (album.artist != null)
+            Text(
+              album.artist!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                color: ColorTokens.textSecondary,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showMenu(
+    BuildContext context,
+    WidgetRef ref,
+    dynamic device,
+    Offset pos,
+  ) async {
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+      color: ColorTokens.surface,
+      items: [
+        const PopupMenuItem(
+          value: 'open',
+          child: _CardMenuItem(icon: Icons.album_outlined, label: 'Open Album'),
+        ),
+        if (device != null)
+          const PopupMenuItem(
+            value: 'transfer',
+            child: _CardMenuItem(icon: Icons.download, label: 'Transfer Album'),
+          ),
+        const PopupMenuItem(
+          value: 'playlist',
+          child: _CardMenuItem(icon: Icons.playlist_add, label: 'Add to Playlist'),
+        ),
+      ],
+    );
+    if (!context.mounted) return;
+
+    if (result == 'open') {
+      ref.read(selectedAlbumIdProvider.notifier).state = album.id;
+      return;
+    }
+
+    if (result == 'transfer' || result == 'playlist') {
+      final full = await ref.read(albumProvider(album.id).future);
+      if (full == null || !context.mounted) return;
+      if (result == 'transfer') {
+        final d = ref.read(selectedDeviceProvider);
+        final repo = ref.read(libraryRepositoryProvider);
+        if (d == null || repo == null) return;
+        ref.read(transferQueueProvider.notifier)
+            .enqueue(full.songs, d.path, repo.downloadUri);
+      } else {
+        showAddToPlaylistDialog(
+            context, ref, full.songs.map((s) => s.id).toList());
+      }
+    }
+  }
+}
+
+class _CardMenuItem extends StatelessWidget {
+  const _CardMenuItem({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: ColorTokens.textPrimary),
+        const SizedBox(width: 8),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 13, color: ColorTokens.textPrimary)),
+      ],
+    );
+  }
+}

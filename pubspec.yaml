@@ -1,0 +1,59 @@
+name: dapper
+description: "Transfer music from Navidrome to your DAP — iTunes-inspired desktop app."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP & Subsonic API
+  dio: ^5.7.0
+
+  # State management
+  flutter_riverpod: ^2.6.1
+  riverpod_annotation: ^2.6.1
+
+  # Immutable models & JSON
+  freezed_annotation: ^2.4.4
+  json_annotation: ^4.9.0
+
+  # Local persistence
+  drift: ^2.23.1
+  sqlite3_flutter_libs: ^0.5.29
+  path_provider: ^2.1.5
+  path: ^1.9.1
+
+  # Secure credential storage
+  flutter_secure_storage: ^9.2.4
+
+  # Audio playback
+  just_audio: ^0.9.46
+
+  # UI utilities
+  window_manager: ^0.4.3
+  cached_network_image: ^3.4.1
+
+  # Crypto (MD5 for Subsonic auth)
+  crypto: ^3.0.6
+
+  # UUID for transfer task IDs
+  uuid: ^4.5.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Code generation
+  build_runner: ^2.4.15
+  riverpod_generator: ^2.6.3
+  freezed: ^2.5.7
+  json_serializable: ^6.9.0
+  drift_dev: ^2.23.1
+
+flutter:
+  uses-material-design: true
