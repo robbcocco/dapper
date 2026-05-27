@@ -30,7 +30,10 @@ class CoverArtImage extends ConsumerWidget {
       borderRadius: BorderRadius.circular(borderRadius),
       child: CachedNetworkImage(
         imageUrl: uri.toString(),
+        cacheKey: 'ca_${coverArtId}_$size',
         fit: BoxFit.cover,
+        fadeInDuration: Duration.zero,
+        fadeOutDuration: Duration.zero,
         placeholder: (ctx, url) => _placeholder(),
         errorWidget: (ctx, url, err) => _placeholder(),
       ),

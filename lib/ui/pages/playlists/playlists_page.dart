@@ -430,7 +430,7 @@ class _PlaylistSongRow extends ConsumerWidget {
       onRemove: () => ref
           .read(playlistActionsProvider.notifier)
           .removeSong(playlistId, index),
-      onGetInfo: () => showSongMetadataDialog(context, ref, song),
+      onGetInfo: () => showSongMetadataDialog(context, song),
     );
   }
 }

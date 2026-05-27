@@ -110,44 +110,51 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
               const SizedBox(height: 20),
               _SectionLabel('FOLDER STRUCTURE'),
               const SizedBox(height: 8),
-              ...[
-                (FolderStructure.artistAlbum, 'Artist / Album / track'),
-                (FolderStructure.artistAlbumYear, 'Artist / Year - Album / track'),
-                (FolderStructure.artistOnly, 'Artist / track'),
-                (FolderStructure.flat, 'Flat (all files in music root)'),
-              ].map(
-                (entry) => RadioListTile<FolderStructure>(
-                  value: entry.$1,
-                  groupValue: _folderStructure,
-                  onChanged: (v) =>
-                      setState(() => _folderStructure = v!),
-                  title: Text(entry.$2,
-                      style: const TextStyle(
-                          fontSize: 13, color: ColorTokens.textPrimary)),
-                  dense: true,
-                  activeColor: ColorTokens.accent,
-                  contentPadding: EdgeInsets.zero,
+              RadioGroup<FolderStructure>(
+                groupValue: _folderStructure,
+                onChanged: (v) => setState(() => _folderStructure = v!),
+                child: Column(
+                  children: [
+                    (FolderStructure.artistAlbum, 'Artist / Album / track'),
+                    (FolderStructure.artistAlbumYear, 'Artist / Year - Album / track'),
+                    (FolderStructure.artistOnly, 'Artist / track'),
+                    (FolderStructure.flat, 'Flat (all files in music root)'),
+                  ].map(
+                    (entry) => RadioListTile<FolderStructure>(
+                      value: entry.$1,
+                      title: Text(entry.$2,
+                          style: const TextStyle(
+                              fontSize: 13, color: ColorTokens.textPrimary)),
+                      dense: true,
+                      activeColor: ColorTokens.accent,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ).toList(),
                 ),
               ),
 
               const SizedBox(height: 20),
               _SectionLabel('FILENAME FORMAT'),
               const SizedBox(height: 8),
-              ...[
-                (FilenameFormat.discTrack, '1-01 - Title  (disc · track · title)'),
-                (FilenameFormat.track,     '01 Title  (track · title)'),
-                (FilenameFormat.none,      'Title  (no prefix)'),
-              ].map(
-                (entry) => RadioListTile<FilenameFormat>(
-                  value: entry.$1,
-                  groupValue: _filenameFormat,
-                  onChanged: (v) => setState(() => _filenameFormat = v!),
-                  title: Text(entry.$2,
-                      style: const TextStyle(
-                          fontSize: 13, color: ColorTokens.textPrimary)),
-                  dense: true,
-                  activeColor: ColorTokens.accent,
-                  contentPadding: EdgeInsets.zero,
+              RadioGroup<FilenameFormat>(
+                groupValue: _filenameFormat,
+                onChanged: (v) => setState(() => _filenameFormat = v!),
+                child: Column(
+                  children: [
+                    (FilenameFormat.discTrack, '1-01 - Title  (disc · track · title)'),
+                    (FilenameFormat.track,     '01 Title  (track · title)'),
+                    (FilenameFormat.none,      'Title  (no prefix)'),
+                  ].map(
+                    (entry) => RadioListTile<FilenameFormat>(
+                      value: entry.$1,
+                      title: Text(entry.$2,
+                          style: const TextStyle(
+                              fontSize: 13, color: ColorTokens.textPrimary)),
+                      dense: true,
+                      activeColor: ColorTokens.accent,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ).toList(),
                 ),
               ),
 

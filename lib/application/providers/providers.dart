@@ -2,14 +2,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../data/database/app_database.dart';
-import '../../data/datasources/remote/navidrome_client.dart';
 import '../../data/datasources/remote/subsonic_api.dart';
 import '../../data/datasources/remote/subsonic_client.dart';
 import '../../data/repositories/library_repository_impl.dart';
 import '../../domain/models/connected_device.dart';
+import '../../domain/models/device_settings.dart';
 import '../../domain/models/transfer_task.dart';
 import '../../domain/repositories/library_repository.dart';
 import '../../platform/drive_detector.dart';
+import '../device/device_settings_notifier.dart';
 import '../transfer/transfer_queue_notifier.dart';
 
 // ── Database ──────────────────────────────────────────────────────────────────
@@ -68,18 +69,6 @@ final libraryRepositoryProvider = Provider<LibraryRepository?>((ref) {
   return LibraryRepositoryImpl(api);
 });
 
-// ── Navidrome internal API ────────────────────────────────────────────────────
-
-final navidromeClientProvider = Provider<NavidromeClient?>((ref) {
-  final creds = ref.watch(serverCredentialsProvider).valueOrNull;
-  if (creds == null) return null;
-  return NavidromeClient(
-    baseUrl: creds.url,
-    username: creds.username,
-    password: creds.password,
-  );
-});
-
 // ── Device detection ──────────────────────────────────────────────────────────
 
 final driveDetectorProvider = Provider<DriveDetector>(
@@ -101,3 +90,11 @@ final transferQueueProvider =
     NotifierProvider<TransferQueueNotifier, List<TransferTask>>(
   TransferQueueNotifier.new,
 );
+
+// ── All stored device settings ────────────────────────────────────────────────
+
+final allStoredDeviceSettingsProvider = FutureProvider<List<DeviceSettings>>((ref) async {
+  final db = ref.watch(appDatabaseProvider);
+  final rows = await db.getAllDeviceSettings();
+  return rows.map(DeviceSettingsNotifier.fromRow).toList();
+});

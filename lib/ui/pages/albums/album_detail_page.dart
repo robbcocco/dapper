@@ -8,14 +8,14 @@ import '../../../application/playback/playback_notifier.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_path_resolver.dart';
 import '../../../core/theme/color_tokens.dart';
-import '../../../domain/models/connected_device.dart';
-import '../../../domain/models/device_settings.dart';
+import '../../../domain/models/album.dart';
 import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
+import 'album_info_dialog.dart';
 
 class AlbumDetailPage extends ConsumerWidget {
   const AlbumDetailPage({super.key, required this.albumId});
@@ -33,13 +33,7 @@ class AlbumDetailPage extends ConsumerWidget {
           slivers: [
             SliverToBoxAdapter(
               child: _AlbumHeader(
-                albumId: albumId,
-                name: a.name,
-                artist: a.artist,
-                year: a.year,
-                coverArtId: a.coverArtId,
-                songCount: a.songCount,
-                songs: a.songs,
+                album: a,
                 onBack: () =>
                     ref.read(selectedAlbumIdProvider.notifier).state = null,
               ),
@@ -67,30 +61,16 @@ class AlbumDetailPage extends ConsumerWidget {
 // ── Album header ──────────────────────────────────────────────────────────────
 
 class _AlbumHeader extends ConsumerWidget {
-  const _AlbumHeader({
-    required this.albumId,
-    required this.name,
-    required this.artist,
-    required this.year,
-    required this.coverArtId,
-    required this.songCount,
-    required this.songs,
-    required this.onBack,
-  });
+  const _AlbumHeader({required this.album, required this.onBack});
 
-  final String albumId;
-  final String name;
-  final String? artist;
-  final int? year;
-  final String? coverArtId;
-  final int songCount;
-  final List<Song> songs;
+  final Album album;
   final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final device = ref.watch(selectedDeviceProvider);
     final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final songs = album.songs;
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -107,7 +87,7 @@ class _AlbumHeader extends ConsumerWidget {
             width: 120,
             height: 120,
             child: CoverArtImage(
-                coverArtId: coverArtId, size: 240, borderRadius: 8),
+                coverArtId: album.coverArtId, size: 240, borderRadius: 8),
           ),
           const SizedBox(width: 20),
           Expanded(
@@ -115,20 +95,23 @@ class _AlbumHeader extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  name,
+                  album.name,
                   style: const TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                     color: ColorTokens.textPrimary,
                   ),
                 ),
-                if (artist != null)
-                  Text(artist!,
+                if (album.artist != null)
+                  Text(album.artist!,
                       style: const TextStyle(
                           fontSize: 14, color: ColorTokens.accent)),
                 const SizedBox(height: 4),
                 Text(
-                  [if (year != null) '$year', '$songCount songs'].join(' · '),
+                  [
+                    if (album.year != null) '${album.year}',
+                    '${album.songCount} songs',
+                  ].join(' · '),
                   style: const TextStyle(
                       fontSize: 12, color: ColorTokens.textSecondary),
                 ),
@@ -186,6 +169,14 @@ class _AlbumHeader extends ConsumerWidget {
                           : () => showAddToPlaylistDialog(
                               context, ref, songs.map((s) => s.id).toList()),
                     ),
+                    // Get Info
+                    IconButton(
+                      icon: const Icon(Icons.info_outline, size: 20),
+                      color: ColorTokens.textSecondary,
+                      tooltip: 'Get Info',
+                      onPressed: () =>
+                          AlbumInfoDialog.show(context, album),
+                    ),
                   ],
                 ),
               ],
@@ -200,7 +191,7 @@ class _AlbumHeader extends ConsumerWidget {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
     ref.read(transferQueueProvider.notifier).enqueue(
-          songs,
+          album.songs,
           devicePath,
           (id) => repo.downloadUri(id),
         );
@@ -254,7 +245,8 @@ class _AlbumSongRow extends ConsumerWidget {
           .playSong(song, queue: allSongs, index: index),
       onAddToPlaylist: () =>
           showAddToPlaylistDialog(context, ref, [song.id]),
-      onGetInfo: () => showSongMetadataDialog(context, ref, song),
+      onGetInfo: () => showSongMetadataDialog(context, song),
     );
   }
 }
+

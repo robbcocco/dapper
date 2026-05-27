@@ -1,3 +1,5 @@
+import 'dart:developer' as dev;
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/providers.dart';
@@ -14,7 +16,9 @@ class StarredNotifier extends Notifier<Set<String>> {
     if (repo == null) return;
     try {
       state = await repo.getStarredSongIds();
-    } catch (_) {}
+    } catch (e) {
+      dev.log('StarredNotifier: failed to load starred songs — $e');
+    }
   }
 
   Future<void> toggle(String songId) async {

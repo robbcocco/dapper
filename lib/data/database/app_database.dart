@@ -73,6 +73,9 @@ class AppDatabase extends _$AppDatabase {
             ..where((t) => t.devicePath.equals(devicePath)))
           .getSingleOrNull();
 
+  Future<List<DeviceSettingsTableData>> getAllDeviceSettings() =>
+      select(deviceSettingsTable).get();
+
   Future<void> upsertDeviceSettings(DeviceSettingsTableCompanion row) =>
       into(deviceSettingsTable).insertOnConflictUpdate(row);
 }

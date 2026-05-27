@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:macos_window_utils/macos_window_utils.dart';
 
 import '../../application/library/sidebar_state.dart';
 import '../../application/providers/providers.dart';
+import '../../core/constants/app_constants.dart';
+import '../../core/theme/color_tokens.dart';
 import '../pages/albums/albums_page.dart';
 import '../pages/artists/artists_page.dart';
 import '../pages/device/device_page.dart';
@@ -16,43 +19,143 @@ import 'sidebar/sidebar_widget.dart';
 class AppShell extends ConsumerWidget {
   const AppShell({super.key});
 
+  // Gap between floating cards and window edges / each other.
+  static const double _m = 8.0;
+  // Corner radius for floating cards.
+  static const double _r = 12.0;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final creds = ref.watch(serverCredentialsProvider);
 
-    // Clear stale device selection when a device is disconnected.
     ref.listen(connectedDevicesProvider, (_, next) {
       final devices = next.valueOrNull ?? [];
       final selected = ref.read(selectedDeviceProvider);
       if (selected != null && !devices.any((d) => d.path == selected.path)) {
         ref.read(selectedDeviceProvider.notifier).state = null;
+      } else if (selected == null && devices.length == 1) {
+        ref.read(selectedDeviceProvider.notifier).state = devices.first;
       }
     });
 
-    if (creds.valueOrNull == null) {
-      return const Scaffold(body: SettingsPage());
+    if (creds.isLoading) {
+      return const Scaffold(backgroundColor: ColorTokens.background);
     }
 
+    if (creds.valueOrNull == null) {
+      return const Scaffold(
+        backgroundColor: ColorTokens.background,
+        body: SettingsPage(),
+      );
+    }
+
+    const sW = AppConstants.sidebarWidth;
+    const bH = AppConstants.bottomBarHeight;
+
     return Scaffold(
-      body: Column(
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                const SidebarWidget(),
-                const VerticalDivider(width: 1),
-                Expanded(child: _MainPanel()),
-              ],
+      backgroundColor: ColorTokens.background,
+      body: TitlebarSafeArea(
+        child: Stack(
+          children: [
+            // ── Main content ───────────────────────────────────────────────
+            // Fills all the way to the window bottom so content flows behind
+            // the floating bar naturally (bar overlays, not clips).
+            Positioned(
+              left: sW + _m * 2,
+              right: 0,
+              top: 0,
+              bottom: 0,
+              child: const ColoredBox(
+                color: ColorTokens.background,
+                child: _MainPanel(),
+              ),
             ),
-          ),
-          const BottomBarWidget(),
-        ],
+
+            // ── Floating sidebar — full height ─────────────────────────────
+            Positioned(
+              left: _m,
+              top: _m,
+              bottom: _m,
+              width: sW,
+              child: const _FloatingCard(
+                radius: _r,
+                child: SidebarWidget(),
+              ),
+            ),
+
+            // ── Floating bottom bar — centered in the right area ───────────
+            // Width is 65 % of the available space, clamped so all controls
+            // always fit (the bar needs ~600 px minimum).
+            Positioned(
+              left: sW + _m * 2,
+              right: _m,
+              bottom: _m,
+              height: bH,
+              child: LayoutBuilder(
+                builder: (_, constraints) {
+                  final w =
+                      (constraints.maxWidth * 0.65).clamp(620.0, 1000.0);
+                  return Center(
+                    child: SizedBox(
+                      width: w,
+                      child: const _FloatingCard(
+                        radius: _r + 2,
+                        child: BottomBarWidget(),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
+// ── Floating card wrapper ─────────────────────────────────────────────────────
+
+class _FloatingCard extends StatelessWidget {
+  const _FloatingCard({required this.radius, required this.child});
+
+  final double radius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final br = BorderRadius.circular(radius);
+    return DecoratedBox(
+      // Background layer — shadow only, no fill (content provides its own bg).
+      decoration: BoxDecoration(
+        borderRadius: br,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 18,
+            spreadRadius: -2,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: DecoratedBox(
+        // Foreground layer — glass border on top of content.
+        decoration: BoxDecoration(
+          borderRadius: br,
+          border: Border.all(color: ColorTokens.glassBorder),
+        ),
+        position: DecorationPosition.foreground,
+        child: ClipRRect(borderRadius: br, child: child),
+      ),
+    );
+  }
+}
+
+// ── Main panel ────────────────────────────────────────────────────────────────
+
 class _MainPanel extends ConsumerWidget {
+  const _MainPanel();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final query = ref.watch(searchQueryProvider);

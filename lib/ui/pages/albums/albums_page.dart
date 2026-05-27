@@ -4,15 +4,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
+import '../../../application/playback/playback_notifier.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_path_resolver.dart';
-import '../../../application/transfer/transfer_queue_notifier.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/album.dart';
+import '../../../domain/models/artist.dart';
+import '../../../domain/models/song.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import 'album_detail_page.dart';
+import 'album_info_dialog.dart';
 
 enum AlbumsPageMode { recent, all }
 
@@ -60,10 +63,10 @@ class _ArtistAlbumsView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final artistName = ref
+    final artist = ref
         .watch(artistsProvider)
         .valueOrNull
-        ?.fold<String?>(null, (prev, a) => a.id == artistId ? a.name : prev);
+        ?.fold<Artist?>(null, (prev, a) => a.id == artistId ? a : prev);
 
     final albums = ref.watch(albumsByArtistProvider(artistId));
 
@@ -72,10 +75,11 @@ class _ArtistAlbumsView extends ConsumerWidget {
       children: [
         // Header ──────────────────────────────────────────────────────────────
         Container(
-          padding: const EdgeInsets.fromLTRB(8, 8, 24, 8),
+          padding: const EdgeInsets.fromLTRB(12, 16, 24, 16),
           decoration: const BoxDecoration(
               border: Border(bottom: BorderSide(color: ColorTokens.divider))),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios, size: 16),
@@ -84,18 +88,71 @@ class _ArtistAlbumsView extends ConsumerWidget {
                 color: ColorTokens.textSecondary,
                 tooltip: 'All Albums',
               ),
-              if (artistName != null)
-                Expanded(
-                  child: Text(
-                    artistName,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: ColorTokens.textPrimary,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+              const SizedBox(width: 8),
+              if (artist != null) ...[
+                SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: CoverArtImage(
+                    coverArtId: artist.coverArtId,
+                    size: 160,
+                    borderRadius: 40,
                   ),
                 ),
+                const SizedBox(width: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      artist.name,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: ColorTokens.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${artist.albumCount} album${artist.albumCount == 1 ? '' : 's'}',
+                      style: const TextStyle(
+                          fontSize: 12, color: ColorTokens.textSecondary),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () => ref
+                              .read(playbackProvider.notifier)
+                              .playArtist(artist.id),
+                          icon: const Icon(Icons.play_arrow, size: 15),
+                          label: const Text('Play All'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: ColorTokens.surfaceVariant,
+                            foregroundColor: ColorTokens.textPrimary,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          onPressed: () => _transferAll(ref, artist.id),
+                          icon: const Icon(Icons.download, size: 15),
+                          label: const Text('Transfer All'),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: ColorTokens.accent,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            textStyle: const TextStyle(fontSize: 11),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
@@ -117,6 +174,22 @@ class _ArtistAlbumsView extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  Future<void> _transferAll(WidgetRef ref, String artistId) async {
+    final device = ref.read(selectedDeviceProvider);
+    final repo = ref.read(libraryRepositoryProvider);
+    if (device == null || repo == null) return;
+    final albums = await repo.getAlbumsByArtist(artistId);
+    final allSongs = <Song>[];
+    for (final album in albums) {
+      final full = await repo.getAlbum(album.id);
+      allSongs.addAll(full.songs);
+    }
+    if (allSongs.isEmpty) return;
+    ref
+        .read(transferQueueProvider.notifier)
+        .enqueue(allSongs, device.path, repo.downloadUri);
   }
 }
 
@@ -247,41 +320,39 @@ class _AlbumCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: CoverArtImage(
-                      coverArtId: album.coverArtId,
-                      size: AppConstants.albumCardSize.toInt(),
-                      borderRadius: 6,
+          AspectRatio(
+            aspectRatio: 1,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: CoverArtImage(
+                    coverArtId: album.coverArtId,
+                    size: AppConstants.albumCardSize.toInt(),
+                    borderRadius: 6,
+                  ),
+                ),
+                if (isSynced)
+                  Positioned(
+                    right: 5,
+                    bottom: 5,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade600,
+                        shape: BoxShape.circle,
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Colors.black26,
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.check,
+                          size: 13, color: Colors.white),
                     ),
                   ),
-                  if (isSynced)
-                    Positioned(
-                      right: 5,
-                      bottom: 5,
-                      child: Container(
-                        width: 20,
-                        height: 20,
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade600,
-                          shape: BoxShape.circle,
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black26,
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: const Icon(Icons.check,
-                            size: 13, color: Colors.white),
-                      ),
-                    ),
-                ],
-              ),
+              ],
             ),
           ),
           const SizedBox(height: 6),
@@ -334,12 +405,23 @@ class _AlbumCard extends ConsumerWidget {
           value: 'playlist',
           child: _CardMenuItem(icon: Icons.playlist_add, label: 'Add to Playlist'),
         ),
+        const PopupMenuItem(
+          value: 'info',
+          child: _CardMenuItem(icon: Icons.info_outline, label: 'Get Info'),
+        ),
       ],
     );
     if (!context.mounted) return;
 
     if (result == 'open') {
       ref.read(selectedAlbumIdProvider.notifier).state = album.id;
+      return;
+    }
+
+    if (result == 'info') {
+      final full = await ref.read(albumProvider(album.id).future);
+      if (full == null || !context.mounted) return;
+      AlbumInfoDialog.show(context, full);
       return;
     }
 

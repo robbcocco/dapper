@@ -62,7 +62,7 @@ class SearchPage extends ConsumerWidget {
                       onAddToPlaylist: () =>
                           showAddToPlaylistDialog(context, ref, [e.value.id]),
                       onGetInfo: () =>
-                          showSongMetadataDialog(context, ref, e.value),
+                          showSongMetadataDialog(context, e.value),
                     ),
                   ),
             ],
@@ -103,7 +103,8 @@ class _ArtistRow extends ConsumerWidget {
     return GestureDetector(
       onTap: () {
         ref.read(selectedArtistIdProvider.notifier).state = artist.id;
-        ref.read(selectedSectionProvider.notifier).state = SidebarSection.albums;
+        ref.read(selectedAlbumIdProvider.notifier).state = null;
+        ref.read(selectedSectionProvider.notifier).state = SidebarSection.artists;
         ref.read(searchQueryProvider.notifier).state = '';
       },
       child: Container(

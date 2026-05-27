@@ -9,6 +9,8 @@ class MainFlutterWindow: NSWindow {
     self.setFrame(windowFrame, display: true)
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    DriveDetectorPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "DriveDetectorPlugin"))
 
     super.awakeFromNib()
   }

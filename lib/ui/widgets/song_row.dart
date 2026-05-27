@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../application/library/starred_notifier.dart';
 import '../../application/playback/playback_notifier.dart';
 import '../../application/providers/providers.dart';
-import '../../application/transfer/transfer_queue_notifier.dart';
 import '../../core/theme/color_tokens.dart';
 import '../../domain/models/song.dart';
 
@@ -126,7 +125,7 @@ class SongRow extends ConsumerWidget {
               ),
             ),
             // Optional trailing (e.g. transfer checkmark)
-            if (trailing != null) trailing!,
+            ?trailing,
             // Duration
             if (song.duration != null)
               Text(

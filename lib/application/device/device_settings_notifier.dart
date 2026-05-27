@@ -16,7 +16,7 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
     final db = ref.read(appDatabaseProvider);
     final row = await db.getDeviceSettings(devicePath);
     if (row == null) return;
-    state = _fromRow(row);
+    state = fromRow(row);
   }
 
   Future<void> save(DeviceSettings settings) async {
@@ -33,7 +33,7 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
     ));
   }
 
-  static DeviceSettings _fromRow(DeviceSettingsTableData row) => DeviceSettings(
+  static DeviceSettings fromRow(DeviceSettingsTableData row) => DeviceSettings(
         devicePath: row.devicePath,
         musicRootFolder: row.musicRootFolder,
         playlistFolder: row.playlistFolder,

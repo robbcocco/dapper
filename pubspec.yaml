@@ -35,6 +35,7 @@ dependencies:
 
   # UI utilities
   window_manager: ^0.4.3
+  macos_window_utils: ^1.4.0
   cached_network_image: ^3.4.1
 
   # Crypto (MD5 for Subsonic auth)

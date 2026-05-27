@@ -7,7 +7,6 @@ import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_queue_notifier.dart';
 import '../../../core/theme/color_tokens.dart';
-import '../../../domain/models/connected_device.dart';
 import '../../../domain/models/transfer_task.dart';
 import 'device_file_browser.dart';
 import 'device_settings_dialog.dart';
@@ -19,20 +18,9 @@ class DevicePage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final devicesAsync = ref.watch(connectedDevicesProvider);
 
-    // Auto-select single device.
-    ref.listen(connectedDevicesProvider, (_, next) {
-      final devices = next.valueOrNull ?? [];
-      final current = ref.read(selectedDeviceProvider);
-      if (devices.length == 1 && current == null) {
-        ref.read(selectedDeviceProvider.notifier).state = devices.first;
-      } else if (devices.isEmpty) {
-        ref.read(selectedDeviceProvider.notifier).state = null;
-      }
-    });
-
     return devicesAsync.when(
       data: (devices) =>
-          devices.isEmpty ? const _NoDevice() : _DeviceView(devices: devices),
+          devices.isEmpty ? const _NoDevice() : const _DeviceView(),
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(
         child: Text('$e',
@@ -67,8 +55,7 @@ class _NoDevice extends StatelessWidget {
 }
 
 class _DeviceView extends ConsumerStatefulWidget {
-  const _DeviceView({required this.devices});
-  final List<ConnectedDevice> devices;
+  const _DeviceView();
 
   @override
   ConsumerState<_DeviceView> createState() => _DeviceViewState();
@@ -103,40 +90,44 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
       children: [
         // ── Header ──────────────────────────────────────────────────────────
         Container(
-          padding: const EdgeInsets.fromLTRB(24, 12, 16, 8),
+          padding: const EdgeInsets.fromLTRB(20, 10, 12, 10),
           decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: ColorTokens.divider))),
+              border: Border(bottom: BorderSide(color: ColorTokens.glassBorder))),
           child: Row(
             children: [
-              const Text('Device',
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: ColorTokens.textSecondary)),
-              const SizedBox(width: 12),
-              DropdownButton<ConnectedDevice>(
-                value: selected,
-                dropdownColor: ColorTokens.surface,
-                style: const TextStyle(
-                    color: ColorTokens.textPrimary, fontSize: 13),
-                underline: const SizedBox.shrink(),
-                onChanged: (d) =>
-                    ref.read(selectedDeviceProvider.notifier).state = d,
-                items: widget.devices
-                    .map((d) => DropdownMenuItem(
-                          value: d,
-                          child: Text(d.label),
-                        ))
-                    .toList(),
+              Icon(
+                Icons.usb,
+                size: 15,
+                color: selected != null
+                    ? ColorTokens.accent
+                    : ColorTokens.textSecondary,
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  selected?.label ?? 'Select a device from the sidebar',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: selected != null
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                    color: selected != null
+                        ? ColorTokens.textPrimary
+                        : ColorTokens.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               if (selected != null)
                 IconButton(
                   icon: const Icon(Icons.settings_outlined,
-                      size: 18, color: ColorTokens.textSecondary),
+                      size: 16, color: ColorTokens.textSecondary),
                   tooltip: 'Device settings',
-                  onPressed: () => DeviceSettingsDialog.show(
-                      context, selected.path),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () =>
+                      DeviceSettingsDialog.show(context, selected.path),
                 ),
             ],
           ),
@@ -183,7 +174,11 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
           ),
 
         // ── Tabs ─────────────────────────────────────────────────────────────
-        TabBar(
+        Container(
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: ColorTokens.glassBorder)),
+          ),
+          child: TabBar(
           controller: _tabController,
           labelColor: ColorTokens.accent,
           unselectedLabelColor: ColorTokens.textSecondary,
@@ -217,6 +212,7 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
               ),
             ),
           ],
+        ),
         ),
 
         // ── Tab content ───────────────────────────────────────────────────────

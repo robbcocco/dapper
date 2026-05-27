@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:macos_window_utils/macos_window_utils.dart';
+import 'package:macos_window_utils/widgets/transparent_macos_sidebar.dart';
 
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/playlist_actions_notifier.dart';
@@ -27,7 +29,6 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
 
   @override
   Widget build(BuildContext context) {
-    // Sync text field when the query is cleared from outside (e.g., search result nav).
     ref.listen(searchQueryProvider, (_, next) {
       if (next.isEmpty && _ctrl.text.isNotEmpty) {
         _ctrl.clear();
@@ -36,9 +37,9 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
     });
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
       child: SizedBox(
-        height: 28,
+        height: 26,
         child: TextField(
           controller: _ctrl,
           style: const TextStyle(fontSize: 12, color: ColorTokens.textPrimary),
@@ -47,9 +48,9 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
             hintStyle: const TextStyle(
                 fontSize: 12, color: ColorTokens.textSecondary),
             prefixIcon: const Icon(Icons.search,
-                size: 14, color: ColorTokens.textSecondary),
+                size: 13, color: ColorTokens.textSecondary),
             prefixIconConstraints:
-                const BoxConstraints(minWidth: 28, minHeight: 28),
+                const BoxConstraints(minWidth: 28, minHeight: 26),
             suffixIcon: _ctrl.text.isNotEmpty
                 ? GestureDetector(
                     onTap: () {
@@ -58,17 +59,22 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
                       setState(() {});
                     },
                     child: const Icon(Icons.close,
-                        size: 12, color: ColorTokens.textSecondary),
+                        size: 11, color: ColorTokens.textSecondary),
                   )
                 : null,
             suffixIconConstraints:
                 const BoxConstraints(minWidth: 24, minHeight: 24),
             filled: true,
-            fillColor: ColorTokens.surfaceVariant,
+            fillColor: ColorTokens.surfaceVariant.withValues(alpha: 0.65),
             contentPadding: EdgeInsets.zero,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(6),
+              borderRadius: BorderRadius.circular(14),
               borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: BorderSide(
+                  color: ColorTokens.accent.withValues(alpha: 0.4), width: 1),
             ),
           ),
           onChanged: (v) {
@@ -81,8 +87,23 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
   }
 }
 
-class SidebarWidget extends ConsumerWidget {
+// ── Native vibrancy sidebar ───────────────────────────────────────────────────
+
+class SidebarWidget extends StatelessWidget {
   const SidebarWidget({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const TransparentMacOSSidebar(
+      material: NSVisualEffectViewMaterial.sidebar,
+      state: NSVisualEffectViewState.active,
+      child: _SidebarContent(),
+    );
+  }
+}
+
+class _SidebarContent extends ConsumerWidget {
+  const _SidebarContent();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -90,10 +111,9 @@ class SidebarWidget extends ConsumerWidget {
     final playlists = ref.watch(playlistsProvider);
     final device = ref.watch(selectedDeviceProvider);
     final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
-
     return Container(
       width: AppConstants.sidebarWidth,
-      color: ColorTokens.sidebar,
+      color: ColorTokens.sidebarOverlay,
       child: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
@@ -150,7 +170,7 @@ class SidebarWidget extends ConsumerWidget {
               padding: EdgeInsets.all(16),
               child: LinearProgressIndicator(),
             ),
-            error: (err, st) => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
           ),
           const SizedBox(height: 16),
           _SectionHeader('DEVICE'),
@@ -163,7 +183,7 @@ class SidebarWidget extends ConsumerWidget {
                       device?.path == d.path,
                   ref: ref,
                 )),
-          const Divider(height: 32),
+          const Divider(height: 32, color: ColorTokens.glassBorder),
           _SidebarTile(
             icon: Icons.settings_outlined,
             label: 'Settings',
@@ -244,8 +264,7 @@ class _PlaylistsSectionHeader extends ConsumerWidget {
           style: const TextStyle(color: ColorTokens.textPrimary),
           decoration: InputDecoration(
             hintText: 'Playlist name',
-            hintStyle:
-                const TextStyle(color: ColorTokens.textSecondary),
+            hintStyle: const TextStyle(color: ColorTokens.textSecondary),
             filled: true,
             fillColor: ColorTokens.surfaceVariant,
             border: OutlineInputBorder(
@@ -269,9 +288,7 @@ class _PlaylistsSectionHeader extends ConsumerWidget {
       ),
     );
     if (name != null && name.trim().isNotEmpty) {
-      ref
-          .read(playlistActionsProvider.notifier)
-          .createPlaylist(name.trim());
+      ref.read(playlistActionsProvider.notifier).createPlaylist(name.trim());
     }
   }
 }
@@ -297,10 +314,11 @@ class _SidebarTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isSelected = selected == section;
     return InkWell(
-      onTap: onTap ?? () {
-        ref.read(searchQueryProvider.notifier).state = '';
-        ref.read(selectedSectionProvider.notifier).state = section;
-      },
+      onTap: onTap ??
+          () {
+            ref.read(searchQueryProvider.notifier).state = '';
+            ref.read(selectedSectionProvider.notifier).state = section;
+          },
       child: Container(
         height: 32,
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -316,9 +334,8 @@ class _SidebarTile extends StatelessWidget {
             Icon(
               icon,
               size: 16,
-              color: isSelected
-                  ? ColorTokens.accent
-                  : ColorTokens.textSecondary,
+              color:
+                  isSelected ? ColorTokens.accent : ColorTokens.textSecondary,
             ),
             const SizedBox(width: 8),
             Text(
@@ -328,8 +345,7 @@ class _SidebarTile extends StatelessWidget {
                 color: isSelected
                     ? ColorTokens.textPrimary
                     : ColorTokens.textSecondary,
-                fontWeight:
-                    isSelected ? FontWeight.w500 : FontWeight.normal,
+                fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
               ),
             ),
           ],
@@ -375,7 +391,8 @@ class _PlaylistTile extends StatelessWidget {
             : null,
         child: Row(
           children: [
-            const Icon(Icons.queue_music, size: 14, color: ColorTokens.textSecondary),
+            const Icon(Icons.queue_music,
+                size: 14, color: ColorTokens.textSecondary),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
@@ -430,7 +447,8 @@ class _DeviceItemTile extends StatelessWidget {
             Icon(
               Icons.usb,
               size: 16,
-              color: isSelected ? ColorTokens.accent : ColorTokens.textSecondary,
+              color:
+                  isSelected ? ColorTokens.accent : ColorTokens.textSecondary,
             ),
             const SizedBox(width: 8),
             Expanded(

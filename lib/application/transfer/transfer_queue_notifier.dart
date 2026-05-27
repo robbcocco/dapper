@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
-import '../../domain/models/device_settings.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/song.dart';
 import '../../domain/models/transfer_task.dart';

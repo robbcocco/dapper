@@ -4,7 +4,7 @@ import 'color_tokens.dart';
 class AppTheme {
   static ThemeData get dark => ThemeData(
         brightness: Brightness.dark,
-        scaffoldBackgroundColor: ColorTokens.background,
+        scaffoldBackgroundColor: Colors.transparent,
         colorScheme: const ColorScheme.dark(
           primary: ColorTokens.accent,
           surface: ColorTokens.surface,
@@ -16,7 +16,27 @@ class AppTheme {
           selectedTileColor: ColorTokens.selectionBackground,
         ),
         scrollbarTheme: ScrollbarThemeData(
-          thumbColor: WidgetStateProperty.all(ColorTokens.divider),
+          thumbColor: WidgetStateProperty.all(
+              ColorTokens.textSecondary.withValues(alpha: 0.3)),
+          radius: const Radius.circular(4),
+          thickness: WidgetStateProperty.all(4),
+        ),
+        popupMenuTheme: const PopupMenuThemeData(
+          color: ColorTokens.surface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 8,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(10)),
+            side: BorderSide(color: ColorTokens.glassBorder),
+          ),
+        ),
+        dialogTheme: const DialogThemeData(
+          backgroundColor: ColorTokens.surface,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(14)),
+            side: BorderSide(color: ColorTokens.glassBorder),
+          ),
         ),
         useMaterial3: true,
       );

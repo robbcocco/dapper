@@ -188,7 +188,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
       final current = state.currentSong;
       final rest = state.queue.where((s) => s.id != current?.id).toList()
         ..shuffle(Random());
-      final newQueue = [if (current != null) current, ...rest];
+      final newQueue = [?current, ...rest];
       state = state.copyWith(
         queue: newQueue,
         currentIndex: 0,

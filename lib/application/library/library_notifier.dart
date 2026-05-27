@@ -67,7 +67,7 @@ class AllAlbumsState {
 }
 
 class AllAlbumsNotifier extends Notifier<AllAlbumsState> {
-  static const _pageSize = 500;
+  static const _pageSize = 100;
 
   @override
   AllAlbumsState build() {
@@ -145,7 +145,7 @@ class AllSongsState {
 }
 
 class AllSongsNotifier extends Notifier<AllSongsState> {
-  static const _pageSize = 500;
+  static const _pageSize = 100;
 
   @override
   AllSongsState build() {

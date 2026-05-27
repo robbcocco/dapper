@@ -1,205 +1,109 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../application/library/library_notifier.dart';
-import '../../application/providers/providers.dart';
 import '../../core/theme/color_tokens.dart';
 import '../../domain/models/song.dart';
 
-Future<void> showSongMetadataDialog(
-  BuildContext context,
-  WidgetRef ref,
-  Song song,
-) {
+Future<void> showSongMetadataDialog(BuildContext context, Song song) {
   return showDialog(
     context: context,
-    builder: (_) => _SongMetadataDialog(song: song, ref: ref),
+    builder: (_) => _SongMetadataDialog(song: song),
   );
 }
 
-class _SongMetadataDialog extends StatefulWidget {
-  const _SongMetadataDialog({required this.song, required this.ref});
+class _SongMetadataDialog extends StatelessWidget {
+  const _SongMetadataDialog({required this.song});
   final Song song;
-  final WidgetRef ref;
-
-  @override
-  State<_SongMetadataDialog> createState() => _SongMetadataDialogState();
-}
-
-class _SongMetadataDialogState extends State<_SongMetadataDialog> {
-  late final TextEditingController _title;
-  late final TextEditingController _artist;
-  late final TextEditingController _album;
-  late final TextEditingController _albumArtist;
-  late final TextEditingController _genre;
-  late final TextEditingController _year;
-  late final TextEditingController _track;
-  late final TextEditingController _disc;
-
-  bool _saving = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    final s = widget.song;
-    _title = TextEditingController(text: s.title);
-    _artist = TextEditingController(text: s.artist ?? '');
-    _album = TextEditingController(text: s.album ?? '');
-    _albumArtist = TextEditingController(text: s.albumArtist ?? '');
-    _genre = TextEditingController(text: s.genre ?? '');
-    _year = TextEditingController(
-        text: s.year != null ? '${s.year}' : '');
-    _track = TextEditingController(
-        text: s.track != null ? '${s.track}' : '');
-    _disc = TextEditingController(
-        text: s.discNumber != null ? '${s.discNumber}' : '');
-  }
-
-  @override
-  void dispose() {
-    _title.dispose();
-    _artist.dispose();
-    _album.dispose();
-    _albumArtist.dispose();
-    _genre.dispose();
-    _year.dispose();
-    _track.dispose();
-    _disc.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final client = widget.ref.read(navidromeClientProvider);
-    if (client == null) {
-      setState(() => _error = 'Not connected to server');
-      return;
-    }
-
-    final fields = <String, dynamic>{
-      'title': _title.text.trim(),
-      if (_artist.text.trim().isNotEmpty) 'artist': _artist.text.trim(),
-      if (_album.text.trim().isNotEmpty) 'album': _album.text.trim(),
-      if (_albumArtist.text.trim().isNotEmpty)
-        'albumArtist': _albumArtist.text.trim(),
-      if (_genre.text.trim().isNotEmpty) 'genre': _genre.text.trim(),
-      if (_year.text.trim().isNotEmpty)
-        'year': int.tryParse(_year.text.trim()),
-      if (_track.text.trim().isNotEmpty)
-        'trackNumber': int.tryParse(_track.text.trim()),
-      if (_disc.text.trim().isNotEmpty)
-        'discNumber': int.tryParse(_disc.text.trim()),
-    };
-
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-
-    try {
-      await client.updateSong(widget.song.id, fields);
-      // Invalidate album and playlist caches so the UI reflects changes.
-      if (widget.song.albumId != null) {
-        widget.ref.invalidate(albumProvider(widget.song.albumId!));
-      }
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
-      setState(() {
-        _saving = false;
-        _error = e.toString();
-      });
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
+    final s = song;
     return AlertDialog(
       backgroundColor: ColorTokens.surface,
       title: const Text('Song Info',
           style: TextStyle(color: ColorTokens.textPrimary)),
       content: SizedBox(
-        width: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _Field('Title', _title, autofocus: true),
-              _Field('Artist', _artist),
-              _Field('Album', _album),
-              _Field('Album Artist', _albumArtist),
-              _Field('Genre', _genre),
-              Row(
-                children: [
-                  Expanded(child: _Field('Year', _year, numeric: true)),
-                  const SizedBox(width: 8),
-                  Expanded(child: _Field('Track', _track, numeric: true)),
-                  const SizedBox(width: 8),
-                  Expanded(child: _Field('Disc', _disc, numeric: true)),
-                ],
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(_error!,
-                    style: const TextStyle(
-                        fontSize: 11, color: Colors.redAccent)),
+        width: 360,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _Row('Title', s.title),
+            if (s.artist != null) _Row('Artist', s.artist!),
+            if (s.albumArtist != null) _Row('Album Artist', s.albumArtist!),
+            if (s.album != null) _Row('Album', s.album!),
+            if (s.genre != null && s.genre!.isNotEmpty)
+              _Row('Genre', s.genre!),
+            if (s.year != null) _Row('Year', '${s.year}'),
+            if (s.track != null) _Row('Track', '${s.track}'),
+            if (s.discNumber != null) _Row('Disc', '${s.discNumber}'),
+            if (s.duration != null)
+              _Row('Duration', _fmt(s.duration!)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.info_outline,
+                    size: 12, color: ColorTokens.textSecondary),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Navidrome does not support metadata editing via its API.',
+                    style: TextStyle(
+                        fontSize: 10, color: ColorTokens.textSecondary),
+                  ),
+                ),
               ],
-            ],
-          ),
+            ),
+          ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          style: FilledButton.styleFrom(backgroundColor: ColorTokens.accent),
-          child: _saving
-              ? const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Text('Save'),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close',
+              style: TextStyle(color: ColorTokens.textSecondary)),
         ),
       ],
     );
   }
+
+  static String _fmt(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
+  }
 }
 
-class _Field extends StatelessWidget {
-  const _Field(this.label, this.controller,
-      {this.autofocus = false, this.numeric = false});
-
+class _Row extends StatelessWidget {
+  const _Row(this.label, this.value);
   final String label;
-  final TextEditingController controller;
-  final bool autofocus;
-  final bool numeric;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: TextField(
-        controller: controller,
-        autofocus: autofocus,
-        keyboardType: numeric ? TextInputType.number : TextInputType.text,
-        style: const TextStyle(fontSize: 13, color: ColorTokens.textPrimary),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(
-              fontSize: 11, color: ColorTokens.textSecondary),
-          filled: true,
-          fillColor: ColorTokens.surfaceVariant,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(6),
-            borderSide: BorderSide.none,
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 80,
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: ColorTokens.textSecondary,
+                letterSpacing: 0.3,
+              ),
+            ),
           ),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          isDense: true,
-        ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                  fontSize: 11, color: ColorTokens.textPrimary),
+            ),
+          ),
+        ],
       ),
     );
   }
