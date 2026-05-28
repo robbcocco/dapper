@@ -21,6 +21,7 @@ mixin _$Artist {
   String get name => throw _privateConstructorUsedError;
   String? get coverArtId => throw _privateConstructorUsedError;
   int get albumCount => throw _privateConstructorUsedError;
+  String? get musicBrainzId => throw _privateConstructorUsedError;
 
   /// Create a copy of Artist
   /// with the given fields replaced by the non-null parameter values.
@@ -33,7 +34,13 @@ abstract class $ArtistCopyWith<$Res> {
   factory $ArtistCopyWith(Artist value, $Res Function(Artist) then) =
       _$ArtistCopyWithImpl<$Res, Artist>;
   @useResult
-  $Res call({String id, String name, String? coverArtId, int albumCount});
+  $Res call({
+    String id,
+    String name,
+    String? coverArtId,
+    int albumCount,
+    String? musicBrainzId,
+  });
 }
 
 /// @nodoc
@@ -55,6 +62,7 @@ class _$ArtistCopyWithImpl<$Res, $Val extends Artist>
     Object? name = null,
     Object? coverArtId = freezed,
     Object? albumCount = null,
+    Object? musicBrainzId = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -74,6 +82,10 @@ class _$ArtistCopyWithImpl<$Res, $Val extends Artist>
                 ? _value.albumCount
                 : albumCount // ignore: cast_nullable_to_non_nullable
                       as int,
+            musicBrainzId: freezed == musicBrainzId
+                ? _value.musicBrainzId
+                : musicBrainzId // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -88,7 +100,13 @@ abstract class _$$ArtistImplCopyWith<$Res> implements $ArtistCopyWith<$Res> {
   ) = __$$ArtistImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String id, String name, String? coverArtId, int albumCount});
+  $Res call({
+    String id,
+    String name,
+    String? coverArtId,
+    int albumCount,
+    String? musicBrainzId,
+  });
 }
 
 /// @nodoc
@@ -109,6 +127,7 @@ class __$$ArtistImplCopyWithImpl<$Res>
     Object? name = null,
     Object? coverArtId = freezed,
     Object? albumCount = null,
+    Object? musicBrainzId = freezed,
   }) {
     return _then(
       _$ArtistImpl(
@@ -128,6 +147,10 @@ class __$$ArtistImplCopyWithImpl<$Res>
             ? _value.albumCount
             : albumCount // ignore: cast_nullable_to_non_nullable
                   as int,
+        musicBrainzId: freezed == musicBrainzId
+            ? _value.musicBrainzId
+            : musicBrainzId // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -141,6 +164,7 @@ class _$ArtistImpl implements _Artist {
     required this.name,
     this.coverArtId,
     this.albumCount = 0,
+    this.musicBrainzId,
   });
 
   @override
@@ -152,10 +176,12 @@ class _$ArtistImpl implements _Artist {
   @override
   @JsonKey()
   final int albumCount;
+  @override
+  final String? musicBrainzId;
 
   @override
   String toString() {
-    return 'Artist(id: $id, name: $name, coverArtId: $coverArtId, albumCount: $albumCount)';
+    return 'Artist(id: $id, name: $name, coverArtId: $coverArtId, albumCount: $albumCount, musicBrainzId: $musicBrainzId)';
   }
 
   @override
@@ -168,12 +194,14 @@ class _$ArtistImpl implements _Artist {
             (identical(other.coverArtId, coverArtId) ||
                 other.coverArtId == coverArtId) &&
             (identical(other.albumCount, albumCount) ||
-                other.albumCount == albumCount));
+                other.albumCount == albumCount) &&
+            (identical(other.musicBrainzId, musicBrainzId) ||
+                other.musicBrainzId == musicBrainzId));
   }
 
   @override
   int get hashCode =>
-      Object.hash(runtimeType, id, name, coverArtId, albumCount);
+      Object.hash(runtimeType, id, name, coverArtId, albumCount, musicBrainzId);
 
   /// Create a copy of Artist
   /// with the given fields replaced by the non-null parameter values.
@@ -190,6 +218,7 @@ abstract class _Artist implements Artist {
     required final String name,
     final String? coverArtId,
     final int albumCount,
+    final String? musicBrainzId,
   }) = _$ArtistImpl;
 
   @override
@@ -200,6 +229,8 @@ abstract class _Artist implements Artist {
   String? get coverArtId;
   @override
   int get albumCount;
+  @override
+  String? get musicBrainzId;
 
   /// Create a copy of Artist
   /// with the given fields replaced by the non-null parameter values.

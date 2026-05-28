@@ -71,3 +71,12 @@ bool albumExistsOnDevice(
 /// True if the song file already exists at its expected device path.
 bool songExistsOnDevice(Song song, DeviceSettings settings) =>
     File(buildSongPath(song, settings)).existsSync();
+
+/// True if the artist folder exists on device (meaningless for flat structure).
+/// Use this as a fallback for structures that don't produce per-album folders.
+bool artistFolderExistsOnDevice(String artistName, DeviceSettings settings) {
+  if (settings.folderStructure == FolderStructure.flat) return false;
+  final dir = Directory(
+      p.join(settings.resolvedMusicRoot, artistName.toSafeFilename()));
+  return dir.existsSync();
+}

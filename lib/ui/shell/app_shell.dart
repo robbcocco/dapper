@@ -65,9 +65,9 @@ class AppShell extends ConsumerWidget {
               right: 0,
               top: 0,
               bottom: 0,
-              child: const ColoredBox(
+              child: Material(
                 color: ColorTokens.background,
-                child: _MainPanel(),
+                child: const _MainPanel(),
               ),
             ),
 

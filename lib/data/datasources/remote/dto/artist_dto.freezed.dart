@@ -27,6 +27,7 @@ mixin _$ArtistDto {
   String? get coverArtId => throw _privateConstructorUsedError;
   @JsonKey(name: 'albumCount')
   int get albumCount => throw _privateConstructorUsedError;
+  String? get musicBrainzId => throw _privateConstructorUsedError;
 
   /// Serializes this ArtistDto to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -48,6 +49,7 @@ abstract class $ArtistDtoCopyWith<$Res> {
     String name,
     @JsonKey(name: 'coverArt') String? coverArtId,
     @JsonKey(name: 'albumCount') int albumCount,
+    String? musicBrainzId,
   });
 }
 
@@ -70,6 +72,7 @@ class _$ArtistDtoCopyWithImpl<$Res, $Val extends ArtistDto>
     Object? name = null,
     Object? coverArtId = freezed,
     Object? albumCount = null,
+    Object? musicBrainzId = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -89,6 +92,10 @@ class _$ArtistDtoCopyWithImpl<$Res, $Val extends ArtistDto>
                 ? _value.albumCount
                 : albumCount // ignore: cast_nullable_to_non_nullable
                       as int,
+            musicBrainzId: freezed == musicBrainzId
+                ? _value.musicBrainzId
+                : musicBrainzId // ignore: cast_nullable_to_non_nullable
+                      as String?,
           )
           as $Val,
     );
@@ -109,6 +116,7 @@ abstract class _$$ArtistDtoImplCopyWith<$Res>
     String name,
     @JsonKey(name: 'coverArt') String? coverArtId,
     @JsonKey(name: 'albumCount') int albumCount,
+    String? musicBrainzId,
   });
 }
 
@@ -130,6 +138,7 @@ class __$$ArtistDtoImplCopyWithImpl<$Res>
     Object? name = null,
     Object? coverArtId = freezed,
     Object? albumCount = null,
+    Object? musicBrainzId = freezed,
   }) {
     return _then(
       _$ArtistDtoImpl(
@@ -149,6 +158,10 @@ class __$$ArtistDtoImplCopyWithImpl<$Res>
             ? _value.albumCount
             : albumCount // ignore: cast_nullable_to_non_nullable
                   as int,
+        musicBrainzId: freezed == musicBrainzId
+            ? _value.musicBrainzId
+            : musicBrainzId // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -162,6 +175,7 @@ class _$ArtistDtoImpl implements _ArtistDto {
     required this.name,
     @JsonKey(name: 'coverArt') this.coverArtId,
     @JsonKey(name: 'albumCount') this.albumCount = 0,
+    this.musicBrainzId,
   });
 
   factory _$ArtistDtoImpl.fromJson(Map<String, dynamic> json) =>
@@ -177,10 +191,12 @@ class _$ArtistDtoImpl implements _ArtistDto {
   @override
   @JsonKey(name: 'albumCount')
   final int albumCount;
+  @override
+  final String? musicBrainzId;
 
   @override
   String toString() {
-    return 'ArtistDto(id: $id, name: $name, coverArtId: $coverArtId, albumCount: $albumCount)';
+    return 'ArtistDto(id: $id, name: $name, coverArtId: $coverArtId, albumCount: $albumCount, musicBrainzId: $musicBrainzId)';
   }
 
   @override
@@ -193,13 +209,15 @@ class _$ArtistDtoImpl implements _ArtistDto {
             (identical(other.coverArtId, coverArtId) ||
                 other.coverArtId == coverArtId) &&
             (identical(other.albumCount, albumCount) ||
-                other.albumCount == albumCount));
+                other.albumCount == albumCount) &&
+            (identical(other.musicBrainzId, musicBrainzId) ||
+                other.musicBrainzId == musicBrainzId));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
   @override
   int get hashCode =>
-      Object.hash(runtimeType, id, name, coverArtId, albumCount);
+      Object.hash(runtimeType, id, name, coverArtId, albumCount, musicBrainzId);
 
   /// Create a copy of ArtistDto
   /// with the given fields replaced by the non-null parameter values.
@@ -221,6 +239,7 @@ abstract class _ArtistDto implements ArtistDto {
     required final String name,
     @JsonKey(name: 'coverArt') final String? coverArtId,
     @JsonKey(name: 'albumCount') final int albumCount,
+    final String? musicBrainzId,
   }) = _$ArtistDtoImpl;
 
   factory _ArtistDto.fromJson(Map<String, dynamic> json) =
@@ -236,6 +255,8 @@ abstract class _ArtistDto implements ArtistDto {
   @override
   @JsonKey(name: 'albumCount')
   int get albumCount;
+  @override
+  String? get musicBrainzId;
 
   /// Create a copy of ArtistDto
   /// with the given fields replaced by the non-null parameter values.

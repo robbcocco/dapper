@@ -127,6 +127,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
         name: d.name,
         coverArtId: d.coverArtId,
         albumCount: d.albumCount,
+        musicBrainzId: d.musicBrainzId,
       );
 
   Album _mapAlbum(AlbumDto d) => Album(

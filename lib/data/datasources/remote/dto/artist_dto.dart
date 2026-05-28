@@ -10,6 +10,7 @@ class ArtistDto with _$ArtistDto {
     required String name,
     @JsonKey(name: 'coverArt') String? coverArtId,
     @JsonKey(name: 'albumCount') @Default(0) int albumCount,
+    String? musicBrainzId,
   }) = _ArtistDto;
 
   factory ArtistDto.fromJson(Map<String, dynamic> json) =>

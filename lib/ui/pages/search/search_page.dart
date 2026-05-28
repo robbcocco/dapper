@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
 import '../../../application/playback/playback_notifier.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/artist.dart';
 import '../../../domain/models/album.dart';
@@ -37,7 +38,8 @@ class SearchPage extends ConsumerWidget {
           );
         }
         return ListView(
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          padding: const EdgeInsets.only(
+              top: 16, bottom: AppConstants.scrollBottomInset),
           children: [
             if (r.artists.isNotEmpty) ...[
               _SectionHeader('ARTISTS'),

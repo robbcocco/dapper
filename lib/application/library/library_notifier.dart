@@ -82,12 +82,14 @@ class AllAlbumsNotifier extends Notifier<AllAlbumsState> {
         state = const AllAlbumsState();
         return;
       }
-      final albums = await repo.getAllAlbums(size: _pageSize, offset: 0);
-      state = AllAlbumsState(
-        albums: albums,
-        isLoading: false,
-        hasMore: albums.length == _pageSize,
-      );
+      final all = <Album>[];
+      while (true) {
+        final batch =
+            await repo.getAllAlbums(size: _pageSize, offset: all.length);
+        all.addAll(batch);
+        if (batch.length < _pageSize) break;
+      }
+      state = AllAlbumsState(albums: all, isLoading: false, hasMore: false);
     } catch (e) {
       state = AllAlbumsState(isLoading: false, error: e);
     }

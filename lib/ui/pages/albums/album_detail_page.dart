@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
@@ -15,6 +16,7 @@ import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
+import '../../widgets/sync_dot.dart';
 import 'album_info_dialog.dart';
 
 class AlbumDetailPage extends ConsumerWidget {
@@ -48,7 +50,8 @@ class AlbumDetailPage extends ConsumerWidget {
                 childCount: a.songs.length,
               ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            const SliverToBoxAdapter(
+                child: SizedBox(height: AppConstants.scrollBottomInset)),
           ],
         );
       },
@@ -214,10 +217,11 @@ class _AlbumSongRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final queue = ref.watch(transferQueueProvider);
-    final isQueued = queue.any((t) =>
-        t.song.id == song.id &&
-        (t.status == TransferStatus.queued ||
-            t.status == TransferStatus.inProgress));
+    final isActive = queue.any((t) =>
+        t.song.id == song.id && t.status == TransferStatus.inProgress);
+    final isQueued = !isActive &&
+        queue.any((t) =>
+            t.song.id == song.id && t.status == TransferStatus.queued);
 
     final device = ref.watch(selectedDeviceProvider);
     final settings =
@@ -225,15 +229,18 @@ class _AlbumSongRow extends ConsumerWidget {
     final isOnDevice = settings != null && songExistsOnDevice(song, settings);
 
     Widget? trailing;
-    if (isQueued) {
-      trailing = const Padding(
-        padding: EdgeInsets.only(right: 6),
-        child: Icon(Icons.download, size: 12, color: ColorTokens.accent),
+    if (isActive || isQueued) {
+      trailing = Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: SyncDot(
+          color: Colors.blue.withValues(alpha: 0.85),
+          pulse: isActive,
+        ),
       );
     } else if (isOnDevice) {
-      trailing = const Padding(
-        padding: EdgeInsets.only(right: 6),
-        child: Icon(Icons.check_circle, size: 12, color: Colors.green),
+      trailing = Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: SyncDot(color: Colors.green.withValues(alpha: 0.85)),
       );
     }
 

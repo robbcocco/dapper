@@ -12,6 +12,7 @@ _$ArtistDtoImpl _$$ArtistDtoImplFromJson(Map<String, dynamic> json) =>
       name: json['name'] as String,
       coverArtId: json['coverArt'] as String?,
       albumCount: (json['albumCount'] as num?)?.toInt() ?? 0,
+      musicBrainzId: json['musicBrainzId'] as String?,
     );
 
 Map<String, dynamic> _$$ArtistDtoImplToJson(_$ArtistDtoImpl instance) =>
@@ -20,4 +21,5 @@ Map<String, dynamic> _$$ArtistDtoImplToJson(_$ArtistDtoImpl instance) =>
       'name': instance.name,
       'coverArt': instance.coverArtId,
       'albumCount': instance.albumCount,
+      'musicBrainzId': instance.musicBrainzId,
     };

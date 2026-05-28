@@ -14,6 +14,7 @@ import '../../../domain/models/artist.dart';
 import '../../../domain/models/song.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
+import '../../widgets/sync_dot.dart';
 import 'album_detail_page.dart';
 import 'album_info_dialog.dart';
 
@@ -262,6 +263,8 @@ class _AllAlbumsViewState extends ConsumerState<_AllAlbumsView> {
               child: Center(child: CircularProgressIndicator()),
             ),
           ),
+        const SliverToBoxAdapter(
+            child: SizedBox(height: AppConstants.scrollBottomInset)),
       ],
     );
   }
@@ -293,6 +296,8 @@ class _AlbumGrid extends StatelessWidget {
             ),
           ),
         ),
+        const SliverToBoxAdapter(
+            child: SizedBox(height: AppConstants.scrollBottomInset)),
       ],
     );
   }
@@ -333,23 +338,11 @@ class _AlbumCard extends ConsumerWidget {
                 ),
                 if (isSynced)
                   Positioned(
-                    right: 5,
-                    bottom: 5,
-                    child: Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade600,
-                        shape: BoxShape.circle,
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 4,
-                          ),
-                        ],
-                      ),
-                      child: const Icon(Icons.check,
-                          size: 13, color: Colors.white),
+                    right: 6,
+                    bottom: 6,
+                    child: SyncDot(
+                      color: Colors.green.withValues(alpha: 0.85),
+                      size: 10,
                     ),
                   ),
               ],

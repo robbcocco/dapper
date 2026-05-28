@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/playlist_actions_notifier.dart';
@@ -19,6 +20,7 @@ import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
+import '../../widgets/sync_dot.dart';
 
 class PlaylistsPage extends ConsumerWidget {
   const PlaylistsPage({super.key});
@@ -48,6 +50,7 @@ class _PlaylistList extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return ListView.builder(
+      padding: const EdgeInsets.only(bottom: AppConstants.scrollBottomInset),
       itemCount: playlists.length,
       itemExtent: 56,
       itemBuilder: (context, i) {
@@ -217,7 +220,8 @@ class _PlaylistContent extends ConsumerWidget {
             childCount: playlist.songs.length,
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: 24)),
+        const SliverToBoxAdapter(
+            child: SizedBox(height: AppConstants.scrollBottomInset)),
       ],
     );
   }
@@ -281,11 +285,11 @@ class _PlaylistHeader extends ConsumerWidget {
                 ),
                 if (isOnDevice) ...[
                   const SizedBox(height: 4),
-                  const Row(
+                  Row(
                     children: [
-                      Icon(Icons.check_circle, size: 12, color: Colors.green),
-                      SizedBox(width: 4),
-                      Text('Playlist on device',
+                      SyncDot(color: Colors.green.withValues(alpha: 0.85)),
+                      const SizedBox(width: 4),
+                      const Text('Playlist on device',
                           style:
                               TextStyle(fontSize: 11, color: Colors.green)),
                     ],
@@ -398,22 +402,26 @@ class _PlaylistSongRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final queue = ref.watch(transferQueueProvider);
-    final isQueued = queue.any((t) =>
-        t.song.id == song.id &&
-        (t.status == TransferStatus.queued ||
-            t.status == TransferStatus.inProgress));
+    final isActive = queue.any((t) =>
+        t.song.id == song.id && t.status == TransferStatus.inProgress);
+    final isQueued = !isActive &&
+        queue.any((t) =>
+            t.song.id == song.id && t.status == TransferStatus.queued);
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);
 
     Widget? trailing;
-    if (isQueued) {
-      trailing = const Padding(
-        padding: EdgeInsets.only(right: 6),
-        child: Icon(Icons.download, size: 12, color: ColorTokens.accent),
+    if (isActive || isQueued) {
+      trailing = Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: SyncDot(
+          color: Colors.blue.withValues(alpha: 0.85),
+          pulse: isActive,
+        ),
       );
     } else if (isOnDevice) {
-      trailing = const Padding(
-        padding: EdgeInsets.only(right: 6),
-        child: Icon(Icons.check_circle, size: 12, color: Colors.green),
+      trailing = Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: SyncDot(color: Colors.green.withValues(alpha: 0.85)),
       );
     }
 

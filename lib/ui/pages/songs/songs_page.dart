@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/starred_notifier.dart';
@@ -12,6 +13,7 @@ import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/song_metadata_dialog.dart';
+import '../../widgets/sync_dot.dart';
 
 class SongsPage extends ConsumerStatefulWidget {
   const SongsPage({super.key});
@@ -81,6 +83,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
         Expanded(
           child: ListView.builder(
             controller: _scrollCtrl,
+            padding: const EdgeInsets.only(
+                bottom: AppConstants.scrollBottomInset),
             itemCount: s.songs.length + (s.isLoading ? 1 : 0),
             itemExtent: 36,
             itemBuilder: (context, i) {
@@ -145,10 +149,11 @@ class _SongTableRow extends ConsumerWidget {
         .watch(playbackProvider.select((s) => s.currentSong?.id == song.id));
     final isStarred = ref.watch(starredProvider).contains(song.id);
     final queue = ref.watch(transferQueueProvider);
-    final isQueued = queue.any((t) =>
-        t.song.id == song.id &&
-        (t.status == TransferStatus.queued ||
-            t.status == TransferStatus.inProgress));
+    final isActive = queue.any((t) =>
+        t.song.id == song.id && t.status == TransferStatus.inProgress);
+    final isQueued = !isActive &&
+        queue.any((t) =>
+            t.song.id == song.id && t.status == TransferStatus.queued);
     final device = ref.watch(selectedDeviceProvider);
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
@@ -234,12 +239,19 @@ class _SongTableRow extends ConsumerWidget {
             // Sync indicator
             SizedBox(
               width: 20,
-              child: isQueued
-                  ? const Icon(Icons.download,
-                      size: 12, color: ColorTokens.accent)
+              child: isActive || isQueued
+                  ? Center(
+                      child: SyncDot(
+                        color: Colors.blue.withValues(alpha: 0.85),
+                        pulse: isActive,
+                      ),
+                    )
                   : isOnDevice
-                      ? const Icon(Icons.check_circle,
-                          size: 12, color: Colors.green)
+                      ? Center(
+                          child: SyncDot(
+                            color: Colors.green.withValues(alpha: 0.85),
+                          ),
+                        )
                       : const SizedBox.shrink(),
             ),
             // Star

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../data/database/app_database.dart';
+import '../../data/datasources/remote/lidarr_client.dart';
 import '../../data/datasources/remote/subsonic_api.dart';
 import '../../data/datasources/remote/subsonic_client.dart';
 import '../../data/repositories/library_repository_impl.dart';
@@ -97,4 +98,27 @@ final allStoredDeviceSettingsProvider = FutureProvider<List<DeviceSettings>>((re
   final db = ref.watch(appDatabaseProvider);
   final rows = await db.getAllDeviceSettings();
   return rows.map(DeviceSettingsNotifier.fromRow).toList();
+});
+
+// ── Lidarr credentials ────────────────────────────────────────────────────────
+
+final lidarrCredentialsProvider =
+    FutureProvider<_LidarrCredentials?>((ref) async {
+  final storage = ref.watch(secureStorageProvider);
+  final url = await storage.read(key: 'lidarr_url');
+  final apiKey = await storage.read(key: 'lidarr_api_key');
+  if (url == null || apiKey == null) return null;
+  return _LidarrCredentials(url: url, apiKey: apiKey);
+});
+
+class _LidarrCredentials {
+  const _LidarrCredentials({required this.url, required this.apiKey});
+  final String url;
+  final String apiKey;
+}
+
+final lidarrClientProvider = Provider<LidarrClient?>((ref) {
+  final creds = ref.watch(lidarrCredentialsProvider).valueOrNull;
+  if (creds == null) return null;
+  return LidarrClient(baseUrl: creds.url, apiKey: creds.apiKey);
 });

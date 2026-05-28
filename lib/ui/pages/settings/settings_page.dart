@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../application/lidarr/lidarr_notifier.dart';
 import '../../../application/providers/providers.dart';
+import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
+import '../../../data/datasources/remote/lidarr_client.dart';
 import '../../../data/datasources/remote/subsonic_api.dart';
 import '../../../data/datasources/remote/subsonic_client.dart';
 import '../../../domain/models/device_settings.dart';
+import '../../../domain/models/lidarr_models.dart';
 import '../device/device_settings_dialog.dart';
 
 class SettingsPage extends ConsumerStatefulWidget {
@@ -22,7 +26,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -49,6 +53,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
             labelStyle: const TextStyle(fontSize: 13),
             tabs: const [
               Tab(text: 'Navidrome'),
+              Tab(text: 'Lidarr'),
               Tab(text: 'Devices'),
             ],
           ),
@@ -58,6 +63,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage>
             controller: _tabController,
             children: const [
               _NavidromeTab(),
+              _LidarrTab(),
               _DevicesTab(),
             ],
           ),
@@ -195,7 +201,7 @@ class _NavidromeTabState extends ConsumerState<_NavidromeTab> {
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 480),
         child: ListView(
-          padding: const EdgeInsets.all(32),
+          padding: const EdgeInsets.fromLTRB(32, 32, 32, AppConstants.scrollBottomInset),
           children: [
             if (isConnected) ...[
               Container(
@@ -399,7 +405,7 @@ class _DevicesTab extends ConsumerWidget {
         }
 
         return ListView.builder(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, AppConstants.scrollBottomInset),
           itemCount: stored.length,
           itemBuilder: (context, i) {
             final s = stored[i];
@@ -521,6 +527,451 @@ class _DeviceSettingsTile extends StatelessWidget {
       };
 }
 
+
+// ── Lidarr tab ────────────────────────────────────────────────────────────────
+
+class _LidarrTab extends ConsumerStatefulWidget {
+  const _LidarrTab();
+
+  @override
+  ConsumerState<_LidarrTab> createState() => _LidarrTabState();
+}
+
+class _LidarrTabState extends ConsumerState<_LidarrTab> {
+  final _formKey = GlobalKey<FormState>();
+  final _urlCtrl = TextEditingController();
+  final _keyCtrl = TextEditingController();
+  bool _obscureKey = true;
+  bool _saving = false;
+  bool _disconnecting = false;
+  String? _errorMessage;
+  String? _currentUrl;
+
+  LidarrRootFolder? _selectedRootFolder;
+  LidarrQualityProfile? _selectedQualityProfile;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCurrentCredentials();
+  }
+
+  @override
+  void dispose() {
+    _urlCtrl.dispose();
+    _keyCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCurrentCredentials() async {
+    final storage = ref.read(secureStorageProvider);
+    final url = await storage.read(key: 'lidarr_url');
+    final rootFolderId = await storage.read(key: 'lidarr_root_folder_id');
+    final rootFolderPath = await storage.read(key: 'lidarr_root_folder_path');
+    final qualityProfileId =
+        await storage.read(key: 'lidarr_quality_profile_id');
+    final qualityProfileName =
+        await storage.read(key: 'lidarr_quality_profile_name');
+    if (!mounted) return;
+    setState(() {
+      _currentUrl = url;
+      if (url != null) _urlCtrl.text = url;
+      if (rootFolderId != null && rootFolderPath != null) {
+        _selectedRootFolder = LidarrRootFolder(
+          id: int.tryParse(rootFolderId) ?? 0,
+          path: rootFolderPath,
+        );
+      }
+      if (qualityProfileId != null && qualityProfileName != null) {
+        _selectedQualityProfile = LidarrQualityProfile(
+          id: int.tryParse(qualityProfileId) ?? 0,
+          name: qualityProfileName,
+        );
+      }
+    });
+  }
+
+  Future<void> _disconnect() async {
+    setState(() => _disconnecting = true);
+    final storage = ref.read(secureStorageProvider);
+    await Future.wait([
+      storage.delete(key: 'lidarr_url'),
+      storage.delete(key: 'lidarr_api_key'),
+      storage.delete(key: 'lidarr_root_folder_id'),
+      storage.delete(key: 'lidarr_root_folder_path'),
+      storage.delete(key: 'lidarr_quality_profile_id'),
+      storage.delete(key: 'lidarr_quality_profile_name'),
+    ]);
+    if (!mounted) return;
+    ref.invalidate(lidarrCredentialsProvider);
+    ref.invalidate(lidarrRootFoldersProvider);
+    ref.invalidate(lidarrQualityProfilesProvider);
+    setState(() {
+      _disconnecting = false;
+      _currentUrl = null;
+      _urlCtrl.clear();
+      _keyCtrl.clear();
+      _selectedRootFolder = null;
+      _selectedQualityProfile = null;
+      _errorMessage = null;
+    });
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() {
+      _saving = true;
+      _errorMessage = null;
+    });
+
+    final url = _urlCtrl.text.trim().replaceAll(RegExp(r'/+$'), '');
+    final apiKey = _keyCtrl.text.trim();
+    final storage = ref.read(secureStorageProvider);
+
+    final effectiveKey = apiKey.isNotEmpty
+        ? apiKey
+        : (await storage.read(key: 'lidarr_api_key') ?? '');
+
+    try {
+      final client = LidarrClient(baseUrl: url, apiKey: effectiveKey);
+      final ok = await client.testConnection();
+      if (!ok) throw Exception('Server returned non-ok status');
+
+      await storage.write(key: 'lidarr_url', value: url);
+      if (apiKey.isNotEmpty) {
+        await storage.write(key: 'lidarr_api_key', value: apiKey);
+      }
+
+      if (!mounted) return;
+      ref.invalidate(lidarrCredentialsProvider);
+      ref.invalidate(lidarrRootFoldersProvider);
+      ref.invalidate(lidarrQualityProfilesProvider);
+      setState(() {
+        _currentUrl = url;
+        _saving = false;
+        _keyCtrl.clear();
+        _errorMessage = null;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _errorMessage = 'Connection failed: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _savePickerSelections() async {
+    final storage = ref.read(secureStorageProvider);
+    final rf = _selectedRootFolder;
+    final qp = _selectedQualityProfile;
+    if (rf != null) {
+      await storage.write(
+          key: 'lidarr_root_folder_id', value: rf.id.toString());
+      await storage.write(key: 'lidarr_root_folder_path', value: rf.path);
+    }
+    if (qp != null) {
+      await storage.write(
+          key: 'lidarr_quality_profile_id', value: qp.id.toString());
+      await storage.write(
+          key: 'lidarr_quality_profile_name', value: qp.name);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isConnected = _currentUrl != null;
+    final rootFolders = ref.watch(lidarrRootFoldersProvider);
+    final qualityProfiles = ref.watch(lidarrQualityProfilesProvider);
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(32, 32, 32, AppConstants.scrollBottomInset),
+          children: [
+            if (isConnected) ...[
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.08),
+                  border:
+                      Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle_outline,
+                        size: 14, color: Colors.green),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _currentUrl!,
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.green),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: _disconnecting ? null : _disconnect,
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        minimumSize: Size.zero,
+                      ),
+                      child: _disconnecting
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 1.5,
+                                  color: Colors.redAccent))
+                          : const Text('Disconnect',
+                              style: TextStyle(
+                                  fontSize: 11, color: Colors.redAccent)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'Update connection',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: ColorTokens.textPrimary,
+                ),
+              ),
+            ] else
+              const Text(
+                'Connect to Lidarr',
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: ColorTokens.textPrimary,
+                ),
+              ),
+
+            const SizedBox(height: 32),
+
+            Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Field(
+                    controller: _urlCtrl,
+                    label: 'Lidarr URL',
+                    hint: 'http://localhost:8686',
+                    validator: (v) {
+                      if (v == null || v.trim().isEmpty) return 'Required';
+                      final uri = Uri.tryParse(v.trim());
+                      if (uri == null || !uri.hasScheme) {
+                        return 'Enter a valid URL (http://...)';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _keyCtrl,
+                    obscureText: _obscureKey,
+                    style: const TextStyle(color: ColorTokens.textPrimary),
+                    decoration: InputDecoration(
+                      labelText: isConnected
+                          ? 'New API Key (leave blank to keep current)'
+                          : 'API Key',
+                      labelStyle:
+                          const TextStyle(color: ColorTokens.textSecondary),
+                      filled: true,
+                      fillColor: ColorTokens.surfaceVariant,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide:
+                            const BorderSide(color: ColorTokens.divider),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide:
+                            const BorderSide(color: ColorTokens.glassBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(
+                            color: ColorTokens.accent, width: 1.5),
+                      ),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscureKey
+                              ? Icons.visibility_off
+                              : Icons.visibility,
+                          color: ColorTokens.textSecondary,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscureKey = !_obscureKey),
+                      ),
+                    ),
+                    validator: (v) =>
+                        (!isConnected && (v == null || v.trim().isEmpty))
+                            ? 'Required'
+                            : null,
+                  ),
+                  if (_errorMessage != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                          color: Colors.redAccent, fontSize: 12),
+                    ),
+                  ],
+                  const SizedBox(height: 32),
+                  FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: _saving
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Text(isConnected
+                            ? 'Update Connection'
+                            : 'Connect'),
+                  ),
+                ],
+              ),
+            ),
+
+            if (isConnected) ...[
+              const SizedBox(height: 32),
+              const Divider(color: ColorTokens.glassBorder),
+              const SizedBox(height: 24),
+              const Text(
+                'Default settings for new artists',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: ColorTokens.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'These are used when adding an artist from the library.',
+                style:
+                    TextStyle(fontSize: 11, color: ColorTokens.textSecondary),
+              ),
+              const SizedBox(height: 20),
+              _PickerRow(
+                label: 'Root folder',
+                child: rootFolders.when(
+                  loading: () => const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 1.5)),
+                  error: (e, _) => Text('$e',
+                      style: const TextStyle(
+                          color: Colors.redAccent, fontSize: 11)),
+                  data: (folders) => DropdownButton<LidarrRootFolder>(
+                    value: folders.any((f) =>
+                            f.id == _selectedRootFolder?.id)
+                        ? _selectedRootFolder
+                        : null,
+                    hint: const Text('Select…',
+                        style: TextStyle(
+                            color: ColorTokens.textSecondary, fontSize: 13)),
+                    dropdownColor: ColorTokens.surface,
+                    style: const TextStyle(
+                        color: ColorTokens.textPrimary, fontSize: 13),
+                    underline: const SizedBox.shrink(),
+                    items: folders
+                        .map((f) => DropdownMenuItem(
+                              value: f,
+                              child: Text(f.path,
+                                  style: const TextStyle(
+                                      color: ColorTokens.textPrimary,
+                                      fontSize: 13)),
+                            ))
+                        .toList(),
+                    onChanged: (f) {
+                      setState(() => _selectedRootFolder = f);
+                      _savePickerSelections();
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _PickerRow(
+                label: 'Quality profile',
+                child: qualityProfiles.when(
+                  loading: () => const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 1.5)),
+                  error: (e, _) => Text('$e',
+                      style: const TextStyle(
+                          color: Colors.redAccent, fontSize: 11)),
+                  data: (profiles) => DropdownButton<LidarrQualityProfile>(
+                    value: profiles.any((p) =>
+                            p.id == _selectedQualityProfile?.id)
+                        ? _selectedQualityProfile
+                        : null,
+                    hint: const Text('Select…',
+                        style: TextStyle(
+                            color: ColorTokens.textSecondary, fontSize: 13)),
+                    dropdownColor: ColorTokens.surface,
+                    style: const TextStyle(
+                        color: ColorTokens.textPrimary, fontSize: 13),
+                    underline: const SizedBox.shrink(),
+                    items: profiles
+                        .map((p) => DropdownMenuItem(
+                              value: p,
+                              child: Text(p.name,
+                                  style: const TextStyle(
+                                      color: ColorTokens.textPrimary,
+                                      fontSize: 13)),
+                            ))
+                        .toList(),
+                    onChanged: (p) {
+                      setState(() => _selectedQualityProfile = p);
+                      _savePickerSelections();
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PickerRow extends StatelessWidget {
+  const _PickerRow({required this.label, required this.child});
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: const TextStyle(
+                fontSize: 13, color: ColorTokens.textSecondary),
+          ),
+        ),
+        const SizedBox(width: 8),
+        child,
+      ],
+    );
+  }
+}
 
 class _Field extends StatelessWidget {
   const _Field({

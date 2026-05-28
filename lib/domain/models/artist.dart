@@ -9,5 +9,6 @@ class Artist with _$Artist {
     required String name,
     String? coverArtId,
     @Default(0) int albumCount,
+    String? musicBrainzId,
   }) = _Artist;
 }
