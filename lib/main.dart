@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'application/providers/providers.dart';
 import 'core/constants/app_constants.dart';
 import 'core/theme/app_theme.dart';
 import 'ui/shell/app_shell.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final supportDir = await getApplicationSupportDirectory();
 
   // Initialize macos_window_utils — enables NSVisualEffectView and window APIs.
   await WindowManipulator.initialize();
@@ -22,7 +26,12 @@ void main() async {
   await windowManager.setMinimumSize(AppConstants.minWindowSize);
   await windowManager.setTitle('Dapper');
 
-  runApp(const ProviderScope(child: DapperApp()));
+  runApp(ProviderScope(
+    overrides: [
+      appSupportDirProvider.overrideWithValue(supportDir.path),
+    ],
+    child: const DapperApp(),
+  ));
 }
 
 class DapperApp extends StatelessWidget {

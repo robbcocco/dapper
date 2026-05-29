@@ -1,0 +1,124 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+
+import '../../core/extensions/string_extensions.dart';
+import '../../domain/models/device_settings.dart';
+import '../../domain/repositories/library_repository.dart';
+import '../transfer/device_manifest.dart';
+
+class PruneResult {
+  const PruneResult({
+    required this.songsRemoved,
+    required this.bytesFreed,
+    this.errors = const [],
+  });
+  final int songsRemoved;
+  final int bytesFreed;
+  final List<String> errors;
+}
+
+/// Removes files whose song IDs are no longer present in the library.
+/// Only meaningful for Artist/Album folder structures (others lack per-album manifests).
+Future<PruneResult> pruneDevice(
+  DeviceSettings settings,
+  LibraryRepository repo, {
+  void Function(String)? onProgress,
+}) async {
+  if (settings.folderStructure == FolderStructure.flat ||
+      settings.folderStructure == FolderStructure.artistOnly) {
+    return const PruneResult(songsRemoved: 0, bytesFreed: 0);
+  }
+
+  // Phase 1: collect all song IDs currently in the library.
+  onProgress?.call('Loading library…');
+  final librarySongIds = <String>{};
+  int offset = 0;
+  while (true) {
+    final songs = await repo.getAllSongs(count: 500, offset: offset);
+    if (songs.isEmpty) break;
+    for (final s in songs) {
+      librarySongIds.add(s.id);
+    }
+    offset += songs.length;
+    onProgress?.call('Loaded ${librarySongIds.length} songs from library…');
+  }
+
+  // Phase 2: walk device manifest folders and prune orphan entries.
+  final root = settings.resolvedMusicRoot;
+  final rootDir = Directory(root);
+  if (!rootDir.existsSync()) {
+    return const PruneResult(songsRemoved: 0, bytesFreed: 0);
+  }
+
+  int songsRemoved = 0;
+  int bytesFreed = 0;
+  final errors = <String>[];
+
+  onProgress?.call('Scanning device…');
+  for (final artist in rootDir.listSync()) {
+    if (artist is! Directory) continue;
+    for (final sub in artist.listSync()) {
+      if (sub is! Directory) continue;
+      onProgress?.call('Checking ${p.basename(sub.path)}…');
+      _pruneFolder(
+        sub,
+        librarySongIds,
+        (n) => songsRemoved += n,
+        (b) => bytesFreed += b,
+        errors,
+      );
+    }
+  }
+
+  return PruneResult(
+      songsRemoved: songsRemoved, bytesFreed: bytesFreed, errors: errors);
+}
+
+void _pruneFolder(
+  Directory folder,
+  Set<String> librarySongIds,
+  void Function(int) addSongs,
+  void Function(int) addBytes,
+  List<String> errors,
+) {
+  final manifest = readManifest(folder.path);
+  if (manifest == null || manifest.songs.isEmpty) return;
+
+  final orphans =
+      manifest.songs.where((s) => !librarySongIds.contains(s.id)).toList();
+  if (orphans.isEmpty) return;
+
+  for (final orphan in orphans) {
+    File? target;
+
+    if (orphan.filename != null) {
+      final candidate = File(p.join(folder.path, orphan.filename));
+      if (candidate.existsSync()) target = candidate;
+    }
+
+    if (target == null) {
+      final safeTitle = orphan.title.toSafeFilename();
+      for (final f in folder.listSync().whereType<File>().where(isAudioFile)) {
+        if (p.basenameWithoutExtension(f.path).contains(safeTitle)) {
+          target = f;
+          break;
+        }
+      }
+    }
+
+    if (target != null && target.existsSync()) {
+      try {
+        addBytes(target.lengthSync());
+        target.deleteSync();
+      } catch (e) {
+        errors.add('${p.basename(target.path)}: $e');
+      }
+    }
+    addSongs(1);
+  }
+
+  final keepSongs =
+      manifest.songs.where((s) => librarySongIds.contains(s.id)).toList();
+  writeManifest(folder.path, AlbumManifest(songs: keepSongs));
+}

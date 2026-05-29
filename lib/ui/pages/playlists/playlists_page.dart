@@ -321,20 +321,18 @@ class _PlaylistHeader extends ConsumerWidget {
                       ),
                     // Sync button
                     FilledButton.icon(
-                      onPressed: playlist.songs.isEmpty || device == null
+                      onPressed: playlist.songs.isEmpty || devices.isEmpty
                           ? null
-                          : () => _syncPlaylist(ref),
+                          : () => _syncPlaylist(context, ref),
                       icon: Icon(
                           isOnDevice ? Icons.sync : Icons.download,
                           size: 16),
                       label: Text(
                         devices.isEmpty
                             ? 'No device connected'
-                            : device == null
-                                ? 'Select a device'
-                                : isOnDevice
-                                    ? 'Re-sync'
-                                    : 'Sync Playlist',
+                            : isOnDevice
+                                ? 'Re-sync'
+                                : 'Sync Playlist',
                       ),
                       style: FilledButton.styleFrom(
                         backgroundColor: ColorTokens.accent,
@@ -363,14 +361,14 @@ class _PlaylistHeader extends ConsumerWidget {
     );
   }
 
-  void _syncPlaylist(WidgetRef ref) {
-    final d = device;
-    if (d == null) return;
+  Future<void> _syncPlaylist(BuildContext context, WidgetRef ref) async {
+    final devicePath = await _pickDevicePath(context, devices);
+    if (devicePath == null) return;
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
     ref.read(transferQueueProvider.notifier).enqueuePlaylist(
           playlist,
-          d.path,
+          devicePath,
           (id) => repo.downloadUri(id),
         );
   }
@@ -462,6 +460,31 @@ class _MenuItem extends StatelessWidget {
       ],
     );
   }
+}
+
+Future<String?> _pickDevicePath(
+  BuildContext context,
+  List<ConnectedDevice> devices,
+) async {
+  if (devices.isEmpty) return null;
+  if (devices.length == 1) return devices.first.path;
+  final result = await showDialog<ConnectedDevice>(
+    context: context,
+    builder: (_) => SimpleDialog(
+      backgroundColor: ColorTokens.surface,
+      title: const Text('Choose device',
+          style: TextStyle(color: ColorTokens.textPrimary, fontSize: 16)),
+      children: devices
+          .map((d) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, d),
+                child: Text(d.label,
+                    style: const TextStyle(
+                        color: ColorTokens.textPrimary, fontSize: 13)),
+              ))
+          .toList(),
+    ),
+  );
+  return result?.path;
 }
 
 class _RenameDialog extends StatelessWidget {

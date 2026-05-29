@@ -24,13 +24,14 @@ class CoverArtImage extends ConsumerWidget {
     final repo = ref.watch(libraryRepositoryProvider);
     if (repo == null) return _placeholder();
 
+    final serverId = ref.watch(selectedServerProvider)?.id ?? '';
     final uri = repo.coverArtUri(coverArtId!, size: size);
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: CachedNetworkImage(
         imageUrl: uri.toString(),
-        cacheKey: 'ca_${coverArtId}_$size',
+        cacheKey: 'ca_${serverId}_${coverArtId}_$size',
         fit: BoxFit.cover,
         fadeInDuration: Duration.zero,
         fadeOutDuration: Duration.zero,

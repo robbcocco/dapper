@@ -36,6 +36,7 @@ class PlaylistActionsNotifier extends Notifier<void> {
     if (repo == null) return;
     await repo.updatePlaylist(playlistId, songIndexesToRemove: [songIndex]);
     ref.invalidate(playlistProvider(playlistId));
+    ref.invalidate(playlistsProvider);
   }
 
   Future<void> delete(String playlistId) async {
@@ -43,6 +44,7 @@ class PlaylistActionsNotifier extends Notifier<void> {
     if (repo == null) return;
     await repo.deletePlaylist(playlistId);
     ref.invalidate(playlistsProvider);
+    ref.invalidate(playlistProvider(playlistId));
   }
 }
 

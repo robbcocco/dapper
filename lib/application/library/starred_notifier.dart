@@ -7,6 +7,7 @@ import '../providers/providers.dart';
 class StarredNotifier extends Notifier<Set<String>> {
   @override
   Set<String> build() {
+    ref.watch(libraryRepositoryProvider); // reset when active server changes
     _load();
     return {};
   }

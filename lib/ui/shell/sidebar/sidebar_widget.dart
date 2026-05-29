@@ -10,6 +10,7 @@ import '../../../application/providers/providers.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/connected_device.dart';
+import '../../../domain/models/navidrome_server.dart';
 
 class _SearchBar extends ConsumerStatefulWidget {
   const _SearchBar();
@@ -118,6 +119,7 @@ class _SidebarContent extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
           const _SearchBar(),
+          const _ServerSwitcherHeader(),
           _SectionHeader('LIBRARY'),
           _SidebarTile(
             icon: Icons.album_outlined,
@@ -173,6 +175,8 @@ class _SidebarContent extends ConsumerWidget {
             error: (_, __) => const SizedBox.shrink(),
           ),
           const SizedBox(height: 16),
+          _LidarrSectionHeader(selected: selected, ref: ref),
+          const SizedBox(height: 16),
           _SectionHeader('DEVICE'),
           if (devices.isEmpty)
             const _NoDeviceTile()
@@ -194,6 +198,90 @@ class _SidebarContent extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+class _ServerSwitcherHeader extends ConsumerWidget {
+  const _ServerSwitcherHeader();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final servers = ref.watch(serversProvider);
+    final active = ref.watch(selectedServerProvider);
+
+    if (servers.isEmpty) return const SizedBox.shrink();
+
+    return GestureDetector(
+      onTapDown: (details) => _showMenu(context, ref, details.globalPosition, servers, active),
+      child: Container(
+        height: 32,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        margin: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+        child: Row(
+          children: [
+            const Icon(Icons.dns_outlined, size: 13, color: ColorTokens.textSecondary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                active?.name ?? 'No Server',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: active != null
+                      ? ColorTokens.textPrimary
+                      : ColorTokens.textSecondary,
+                ),
+              ),
+            ),
+            const Icon(Icons.unfold_more, size: 12, color: ColorTokens.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showMenu(
+    BuildContext context,
+    WidgetRef ref,
+    Offset position,
+    List<NavidromeServer> servers,
+    NavidromeServer? active,
+  ) async {
+    final items = <PopupMenuEntry<String>>[
+      for (final s in servers)
+        PopupMenuItem<String>(
+          value: s.id,
+          child: Row(
+            children: [
+              if (s.id == active?.id)
+                const Icon(Icons.check, size: 13, color: ColorTokens.accent)
+              else
+                const SizedBox(width: 13),
+              const SizedBox(width: 8),
+              Text(s.name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: s.id == active?.id
+                        ? ColorTokens.accent
+                        : ColorTokens.textPrimary,
+                  )),
+            ],
+          ),
+        ),
+    ];
+
+    final result = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(
+          position.dx, position.dy, position.dx, position.dy),
+      color: ColorTokens.surface,
+      items: items,
+    );
+
+    if (result != null && result != active?.id) {
+      ref.read(selectedServerIdProvider.notifier).select(result);
+    }
   }
 }
 
@@ -467,6 +555,31 @@ class _DeviceItemTile extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _LidarrSectionHeader extends ConsumerWidget {
+  const _LidarrSectionHeader({required this.selected, required this.ref});
+  final SidebarSection selected;
+  final WidgetRef ref;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final instance = ref.watch(selectedLidarrInstanceProvider);
+    if (instance == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader('LIDARR'),
+        _SidebarTile(
+          icon: Icons.queue_music_outlined,
+          label: instance.name,
+          section: SidebarSection.lidarr,
+          selected: selected,
+          ref: ref,
+        ),
+      ],
     );
   }
 }

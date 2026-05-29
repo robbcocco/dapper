@@ -140,16 +140,16 @@ class SongRow extends ConsumerWidget {
   }
 
   void _showMenu(BuildContext ctx, WidgetRef ref, Offset pos) async {
-    final device = ref.read(selectedDeviceProvider);
+    final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
     final items = <PopupMenuEntry<String>>[
       const PopupMenuItem(
         value: 'play',
         child: _MenuItem(icon: Icons.play_arrow, label: 'Play'),
       ),
-      if (device != null)
+      for (final d in devices)
         PopupMenuItem(
-          value: 'transfer',
-          child: _MenuItem(icon: Icons.download, label: 'Transfer to ${device.label}'),
+          value: 'transfer:${d.path}',
+          child: _MenuItem(icon: Icons.download, label: 'Transfer to ${d.label}'),
         ),
       if (onAddToPlaylist != null)
         const PopupMenuItem(
@@ -176,12 +176,12 @@ class SongRow extends ConsumerWidget {
     );
 
     if (result == 'play') onTap?.call();
-    if (result == 'transfer') {
-      final d = ref.read(selectedDeviceProvider);
+    if (result != null && result.startsWith('transfer:')) {
+      final devicePath = result.substring(9);
       final repo = ref.read(libraryRepositoryProvider);
-      if (d != null && repo != null) {
+      if (repo != null) {
         ref.read(transferQueueProvider.notifier)
-            .enqueue([song], d.path, repo.downloadUri);
+            .enqueue([song], devicePath, repo.downloadUri);
       }
     }
     if (result == 'playlist') onAddToPlaylist?.call();

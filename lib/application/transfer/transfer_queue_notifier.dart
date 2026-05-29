@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -11,28 +12,87 @@ import '../../domain/models/transfer_task.dart';
 import '../device/device_settings_notifier.dart';
 import '../providers/providers.dart';
 import 'playlist_sync_writer.dart';
+import 'device_manifest.dart';
+import 'queue_persistence.dart';
 import 'transfer_path_resolver.dart';
 
 class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   static const _uuid = Uuid();
 
   final _cancelTokens = <String, CancelToken>{};
-  bool _engineRunning = false;
+  final _runningEngines = <String>{}; // keyed by devicePath
+  final _expectedSongCounts = <String, int>{};
+  // Single Dio instance — reuses connections, avoids repeated TLS handshakes.
+  final _dio = Dio();
+  // Tracks last progress-update timestamp per task to throttle state rebuilds.
+  final _lastProgressMs = <String, int>{};
+  // Per-folder write chains: serializes concurrent manifest updates for the
+  // same album folder without blocking the main thread.
+  final _manifestFutures = <String, Future<void>>{};
 
   @override
-  List<TransferTask> build() => [];
+  List<TransferTask> build() {
+    final supportDir = ref.watch(appSupportDirProvider);
+    final raw = loadQueue(supportDir);
+    final restored = raw
+        .map((t) => t.status == TransferStatus.inProgress
+            ? t.copyWith(
+                status: TransferStatus.queued, bytesReceived: 0, totalBytes: 0)
+            : t)
+        .toList();
+
+    // Only persist when task statuses change, not on every progress-byte tick.
+    listenSelf((prev, next) {
+      if (prev != null && prev.length == next.length) {
+        var statusChanged = false;
+        for (var i = 0; i < next.length; i++) {
+          if (next[i].id != prev[i].id || next[i].status != prev[i].status) {
+            statusChanged = true;
+            break;
+          }
+        }
+        if (!statusChanged) return;
+      }
+      saveQueue(supportDir, next);
+    });
+
+    // Resume pending tasks as soon as the library becomes available.
+    ref.listen(libraryRepositoryProvider, (_, repo) {
+      if (repo == null) return;
+      final devices = state
+          .where((t) => t.status == TransferStatus.queued)
+          .map((t) => t.devicePath)
+          .toSet();
+      for (final d in devices) {
+        _startEngineForDevice(d, repo.downloadUri);
+      }
+    });
+
+    return restored;
+  }
 
   // ── Public API ────────────────────────────────────────────────────────────
 
-  void enqueue(List<Song> songs, String devicePath, Uri Function(String) downloadUri) {
-    final newTasks = songs.map((s) => TransferTask(
-          id: _uuid.v4(),
-          song: s,
-          devicePath: devicePath,
-        )).toList();
+  void enqueue(
+    List<Song> songs,
+    String devicePath,
+    Uri Function(String) downloadUri, {
+    Map<String, int>? expectedAlbumSongCounts,
+  }) {
+    if (expectedAlbumSongCounts != null) {
+      _expectedSongCounts.addAll(expectedAlbumSongCounts);
+    }
+
+    final newTasks = songs
+        .map((s) => TransferTask(
+              id: _uuid.v4(),
+              song: s,
+              devicePath: devicePath,
+            ))
+        .toList();
 
     state = [...state, ...newTasks];
-    _startEngineIfIdle(downloadUri);
+    _startEngineForDevice(devicePath, downloadUri);
   }
 
   Future<void> enqueuePlaylist(
@@ -40,7 +100,6 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     String devicePath,
     Uri Function(String) downloadUri,
   ) async {
-    // Write the M3U immediately so it's ready when songs arrive.
     final settings = ref.read(deviceSettingsProvider(devicePath));
     enqueue(playlist.songs, devicePath, downloadUri);
     await writePlaylistM3u(playlist, settings);
@@ -48,17 +107,22 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
   void cancel(String taskId) {
     _cancelTokens[taskId]?.cancel('User cancelled');
-    state = state.map((t) => t.id == taskId
-        ? t.copyWith(status: TransferStatus.cancelled)
-        : t).toList();
+    state = state
+        .map((t) =>
+            t.id == taskId ? t.copyWith(status: TransferStatus.cancelled) : t)
+        .toList();
   }
 
   void retry(String taskId) {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
+    final task = state
+        .where((t) => t.id == taskId && t.status == TransferStatus.failed)
+        .firstOrNull;
+    if (task == null) return;
     state = [
       for (final t in state)
-        if (t.id == taskId && t.status == TransferStatus.failed)
+        if (t.id == taskId)
           t.copyWith(
               status: TransferStatus.queued,
               errorMessage: null,
@@ -67,7 +131,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         else
           t,
     ];
-    _startEngineIfIdle(repo.downloadUri);
+    _startEngineForDevice(task.devicePath, repo.downloadUri);
   }
 
   void clearCompleted() {
@@ -81,22 +145,54 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
   // ── Engine ────────────────────────────────────────────────────────────────
 
-  void _startEngineIfIdle(Uri Function(String) downloadUri) {
-    if (_engineRunning) return;
-    _runEngine(downloadUri);
+  void _startEngineForDevice(
+      String devicePath, Uri Function(String) downloadUri) {
+    if (_runningEngines.contains(devicePath)) return;
+    _runEngine(devicePath, downloadUri);
   }
 
-  Future<void> _runEngine(Uri Function(String) downloadUri) async {
-    _engineRunning = true;
+  // Runs up to [_concurrency] downloads in parallel for a single device.
+  Future<void> _runEngine(
+      String devicePath, Uri Function(String) downloadUri) async {
+    _runningEngines.add(devicePath);
+    var runningCount = 0;
+    Completer<void>? slot; // completed whenever a task finishes
+
     while (true) {
-      final next = state.where((t) => t.status == TransferStatus.queued).firstOrNull;
-      if (next == null) break;
-      await _executeTask(next, downloadUri);
+      final hasQueued = state.any((t) =>
+          t.devicePath == devicePath && t.status == TransferStatus.queued);
+
+      if (!hasQueued && runningCount == 0) break;
+
+      final concurrency = ref.read(appSettingsProvider).transferConcurrency;
+      if (hasQueued && runningCount < concurrency) {
+        final next = state
+            .where((t) =>
+                t.devicePath == devicePath &&
+                t.status == TransferStatus.queued)
+            .first;
+        runningCount++;
+        // _executeTask marks next as inProgress synchronously before its first
+        // await, so the next loop iteration won't pick the same task again.
+        _executeTask(next, downloadUri).whenComplete(() {
+          runningCount--;
+          final c = slot;
+          slot = null;
+          c?.complete();
+        });
+        continue; // immediately try to fill another slot
+      }
+
+      // At capacity or waiting for remaining tasks to finish.
+      slot = Completer();
+      await slot!.future;
     }
-    _engineRunning = false;
+
+    _runningEngines.remove(devicePath);
   }
 
-  Future<void> _executeTask(TransferTask task, Uri Function(String) downloadUri) async {
+  Future<void> _executeTask(
+      TransferTask task, Uri Function(String) downloadUri) async {
     _updateTask(task.id, (t) => t.copyWith(status: TransferStatus.inProgress));
 
     final cancelToken = CancelToken();
@@ -106,33 +202,44 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       final settings = ref.read(deviceSettingsProvider(task.devicePath));
       final targetPath = buildSongPath(task.song, settings);
 
-      if (!settings.overwriteExisting && File(targetPath).existsSync()) {
-        _updateTask(task.id, (t) => t.copyWith(status: TransferStatus.completed));
+      if (!settings.overwriteExisting && await File(targetPath).exists()) {
+        _updateTask(
+            task.id, (t) => t.copyWith(status: TransferStatus.completed));
+        final albumFolder = p.dirname(targetPath);
+        _appendManifest(albumFolder, task.song,
+            expectedSongCount: _expectedSongCounts[albumFolder],
+            filename: p.basename(targetPath));
         return;
       }
 
       await Directory(p.dirname(targetPath)).create(recursive: true);
 
-      final dio = Dio();
       final url = downloadUri(task.song.id).toString();
-
-      await dio.download(
+      await _dio.download(
         url,
         targetPath,
         cancelToken: cancelToken,
         onReceiveProgress: (received, total) {
           if (total <= 0) return;
-          _updateTask(task.id, (t) => t.copyWith(
-                bytesReceived: received,
-                totalBytes: total,
-              ));
+          // Throttle to ~200 ms. Only updates the lightweight progress
+          // provider — the main task state is untouched until completion.
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if ((now - (_lastProgressMs[task.id] ?? 0)) < 200) return;
+          _lastProgressMs[task.id] = now;
+          ref.read(transferProgressProvider.notifier).update(
+              (m) => {...m, task.id: (received, total)});
         },
       );
 
-      _updateTask(task.id, (t) => t.copyWith(
-            status: TransferStatus.completed,
-            bytesReceived: t.totalBytes,
-          ));
+      _updateTask(task.id,
+          (t) => t.copyWith(status: TransferStatus.completed));
+      final albumFolder = p.dirname(targetPath);
+      _appendManifest(
+        albumFolder,
+        task.song,
+        expectedSongCount: _expectedSongCounts[albumFolder],
+        filename: p.basename(targetPath),
+      );
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) return; // already marked cancelled
       _updateTask(task.id, (t) => t.copyWith(
@@ -151,10 +258,28 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
           ));
     } finally {
       _cancelTokens.remove(task.id);
+      _lastProgressMs.remove(task.id);
+      ref.read(transferProgressProvider.notifier).update((m) {
+        if (!m.containsKey(task.id)) return m;
+        return Map.of(m)..remove(task.id);
+      });
     }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  // Chains async manifest writes per folder so concurrent completions for the
+  // same album don't race on the same file — without blocking the main thread.
+  void _appendManifest(String folderPath, Song song,
+      {int? expectedSongCount, String? filename}) {
+    final prev = _manifestFutures[folderPath] ?? Future.value();
+    final next = prev.then((_) => addSongToManifestAsync(folderPath, song,
+        expectedSongCount: expectedSongCount, filename: filename));
+    _manifestFutures[folderPath] = next;
+    next.whenComplete(() {
+      if (_manifestFutures[folderPath] == next) _manifestFutures.remove(folderPath);
+    });
+  }
 
   void _updateTask(String id, TransferTask Function(TransferTask) update) {
     state = state.map((t) => t.id == id ? update(t) : t).toList();
@@ -164,18 +289,11 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 // ── Computed selectors ────────────────────────────────────────────────────────
 
 extension TransferQueueSelectors on List<TransferTask> {
-  int get activeCount =>
-      where((t) => t.status == TransferStatus.inProgress || t.status == TransferStatus.queued).length;
+  int get activeCount => where((t) =>
+      t.status == TransferStatus.inProgress ||
+      t.status == TransferStatus.queued).length;
 
-  int get completedCount => where((t) => t.status == TransferStatus.completed).length;
+  int get completedCount =>
+      where((t) => t.status == TransferStatus.completed).length;
 
-  double get aggregateProgress {
-    final active = where((t) =>
-        t.status == TransferStatus.inProgress || t.status == TransferStatus.queued);
-    if (active.isEmpty) return 0;
-    final totalBytes = active.fold<int>(0, (s, t) => s + t.totalBytes);
-    final receivedBytes = active.fold<int>(0, (s, t) => s + t.bytesReceived);
-    if (totalBytes <= 0) return 0;
-    return receivedBytes / totalBytes;
-  }
 }

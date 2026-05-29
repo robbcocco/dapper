@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
 
+import '../../application/library/library_notifier.dart';
 import '../../application/library/sidebar_state.dart';
+import '../../application/library/starred_notifier.dart';
 import '../../application/providers/providers.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/color_tokens.dart';
 import '../pages/albums/albums_page.dart';
 import '../pages/artists/artists_page.dart';
 import '../pages/device/device_page.dart';
+import '../pages/lidarr/lidarr_page.dart';
 import '../pages/playlists/playlists_page.dart';
 import '../pages/search/search_page.dart';
 import '../pages/settings/settings_page.dart';
@@ -161,6 +164,27 @@ class _MainPanel extends ConsumerWidget {
     final query = ref.watch(searchQueryProvider);
     final section = ref.watch(selectedSectionProvider);
 
+    // Re-fetch library data whenever the user switches to a content tab.
+    // FutureProviders keep old data visible via skipLoadingOnRefresh (default).
+    // NotifierProviders keep old data because refresh() doesn't clear state.
+    ref.listen(selectedSectionProvider, (prev, next) {
+      if (prev == next) return;
+      switch (next) {
+        case SidebarSection.artists:
+          ref.invalidate(artistsProvider);
+          ref.invalidate(albumsByArtistProvider); // refresh all artist drill-downs
+        case SidebarSection.recentlyAdded:
+          ref.invalidate(recentAlbumsProvider);
+        case SidebarSection.albums:
+          ref.read(allAlbumsProvider.notifier).refresh();
+        case SidebarSection.songs:
+          ref.read(allSongsProvider.notifier).refresh();
+          ref.invalidate(starredProvider); // pick up stars changed on other clients
+        default:
+          break;
+      }
+    });
+
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 150),
       child: query.isNotEmpty
@@ -173,6 +197,7 @@ class _MainPanel extends ConsumerWidget {
                 const AlbumsPage(mode: AlbumsPageMode.all),
               SidebarSection.songs => const SongsPage(),
               SidebarSection.playlists => const PlaylistsPage(),
+              SidebarSection.lidarr => const LidarrPage(),
               SidebarSection.device => const DevicePage(),
               SidebarSection.settings => const SettingsPage(),
             },

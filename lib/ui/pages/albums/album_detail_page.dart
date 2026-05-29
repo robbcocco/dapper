@@ -193,10 +193,14 @@ class _AlbumHeader extends ConsumerWidget {
   void _enqueueAll(WidgetRef ref, String devicePath) {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
+    final settings = ref.read(deviceSettingsProvider(devicePath));
+    final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
+    final expectedCounts = folder != null ? {folder: album.songCount} : null;
     ref.read(transferQueueProvider.notifier).enqueue(
           album.songs,
           devicePath,
           (id) => repo.downloadUri(id),
+          expectedAlbumSongCounts: expectedCounts,
         );
   }
 }
@@ -216,12 +220,14 @@ class _AlbumSongRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final queue = ref.watch(transferQueueProvider);
-    final isActive = queue.any((t) =>
-        t.song.id == song.id && t.status == TransferStatus.inProgress);
-    final isQueued = !isActive &&
-        queue.any((t) =>
-            t.song.id == song.id && t.status == TransferStatus.queued);
+    final (isActive, isQueued) = ref.watch(
+      transferQueueProvider.select((q) {
+        final active = q.any((t) =>
+            t.song.id == song.id && t.status == TransferStatus.inProgress);
+        return (active, !active && q.any((t) =>
+            t.song.id == song.id && t.status == TransferStatus.queued));
+      }),
+    );
 
     final device = ref.watch(selectedDeviceProvider);
     final settings =

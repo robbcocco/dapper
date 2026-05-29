@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
 import '../../../application/playback/playback_notifier.dart';
+import '../../../application/providers/providers.dart';
+import '../../../application/transfer/transfer_path_resolver.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/artist.dart';
@@ -109,6 +112,8 @@ class _ArtistRow extends ConsumerWidget {
         ref.read(selectedSectionProvider.notifier).state = SidebarSection.artists;
         ref.read(searchQueryProvider.notifier).state = '';
       },
+      onSecondaryTapUp: (d) =>
+          _showSearchArtistMenu(context, ref, artist, d.globalPosition),
       child: Container(
         height: 40,
         padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -152,6 +157,8 @@ class _AlbumRow extends ConsumerWidget {
         ref.read(selectedSectionProvider.notifier).state = SidebarSection.albums;
         ref.read(searchQueryProvider.notifier).state = '';
       },
+      onSecondaryTapUp: (d) =>
+          _showSearchAlbumMenu(context, ref, album, d.globalPosition),
       child: Container(
         height: 48,
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
@@ -197,6 +204,126 @@ class _AlbumRow extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Context-menu helpers ──────────────────────────────────────────────────────
+
+Future<void> _showSearchArtistMenu(
+  BuildContext context,
+  WidgetRef ref,
+  Artist artist,
+  Offset pos,
+) async {
+  final result = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+    color: ColorTokens.surface,
+    items: [
+      const PopupMenuItem(
+        value: 'go',
+        child: _SearchMenuRow(icon: Icons.person_outline, label: 'Go to Artist'),
+      ),
+      const PopupMenuItem(
+        value: 'play',
+        child: _SearchMenuRow(icon: Icons.play_arrow, label: 'Play All'),
+      ),
+    ],
+  );
+  if (!context.mounted) return;
+
+  if (result == 'go') {
+    ref.read(selectedArtistIdProvider.notifier).state = artist.id;
+    ref.read(selectedAlbumIdProvider.notifier).state = null;
+    ref.read(selectedSectionProvider.notifier).state = SidebarSection.artists;
+    ref.read(searchQueryProvider.notifier).state = '';
+  } else if (result == 'play') {
+    ref.read(playbackProvider.notifier).playArtist(artist.id);
+  }
+}
+
+Future<void> _showSearchAlbumMenu(
+  BuildContext context,
+  WidgetRef ref,
+  Album album,
+  Offset pos,
+) async {
+  final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
+
+  final result = await showMenu<String>(
+    context: context,
+    position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
+    color: ColorTokens.surface,
+    items: [
+      const PopupMenuItem(
+        value: 'open',
+        child: _SearchMenuRow(icon: Icons.album_outlined, label: 'Open Album'),
+      ),
+      const PopupMenuItem(
+        value: 'play',
+        child: _SearchMenuRow(icon: Icons.play_arrow, label: 'Play Album'),
+      ),
+      for (final d in devices)
+        PopupMenuItem(
+          value: 'transfer:${d.path}',
+          child: _SearchMenuRow(
+            icon: Icons.download,
+            label: devices.length == 1
+                ? 'Transfer Album'
+                : 'Transfer to ${d.label}',
+          ),
+        ),
+    ],
+  );
+  if (!context.mounted) return;
+
+  if (result == 'open') {
+    ref.read(selectedAlbumIdProvider.notifier).state = album.id;
+    ref.read(selectedSectionProvider.notifier).state = SidebarSection.albums;
+    ref.read(searchQueryProvider.notifier).state = '';
+  } else if (result == 'play') {
+    final full = await ref.read(albumProvider(album.id).future);
+    if (full == null || full.songs.isEmpty || !context.mounted) return;
+    ref.read(playbackProvider.notifier).playSong(
+          full.songs.first,
+          queue: full.songs,
+          index: 0,
+        );
+  } else if (result != null && result.startsWith('transfer:')) {
+    final devicePath = result.substring(9);
+    final full = await ref.read(albumProvider(album.id).future);
+    if (full == null || !context.mounted) return;
+    final repo = ref.read(libraryRepositoryProvider);
+    if (repo == null) return;
+    final settings = ref.read(deviceSettingsProvider(devicePath));
+    final folder =
+        buildAlbumFolder(album.artist, album.name, album.year, settings);
+    final expectedCounts = folder != null ? {folder: full.songCount} : null;
+    ref.read(transferQueueProvider.notifier).enqueue(
+          full.songs,
+          devicePath,
+          repo.downloadUri,
+          expectedAlbumSongCounts: expectedCounts,
+        );
+  }
+}
+
+class _SearchMenuRow extends StatelessWidget {
+  const _SearchMenuRow({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: ColorTokens.textPrimary),
+        const SizedBox(width: 8),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 13, color: ColorTokens.textPrimary)),
+      ],
     );
   }
 }

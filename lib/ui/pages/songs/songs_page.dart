@@ -148,12 +148,14 @@ class _SongTableRow extends ConsumerWidget {
     final isPlaying = ref
         .watch(playbackProvider.select((s) => s.currentSong?.id == song.id));
     final isStarred = ref.watch(starredProvider).contains(song.id);
-    final queue = ref.watch(transferQueueProvider);
-    final isActive = queue.any((t) =>
-        t.song.id == song.id && t.status == TransferStatus.inProgress);
-    final isQueued = !isActive &&
-        queue.any((t) =>
-            t.song.id == song.id && t.status == TransferStatus.queued);
+    final (isActive, isQueued) = ref.watch(
+      transferQueueProvider.select((q) {
+        final active = q.any((t) =>
+            t.song.id == song.id && t.status == TransferStatus.inProgress);
+        return (active, !active && q.any((t) =>
+            t.song.id == song.id && t.status == TransferStatus.queued));
+      }),
+    );
     final device = ref.watch(selectedDeviceProvider);
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
@@ -277,7 +279,7 @@ class _SongTableRow extends ConsumerWidget {
   }
 
   void _showMenu(BuildContext ctx, WidgetRef ref, Offset pos) async {
-    final device = ref.read(selectedDeviceProvider);
+    final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
     final result = await showMenu<String>(
       context: ctx,
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
@@ -286,12 +288,12 @@ class _SongTableRow extends ConsumerWidget {
         const PopupMenuItem(
             value: 'play',
             child: _MenuItem(icon: Icons.play_arrow, label: 'Play')),
-        if (device != null)
+        for (final d in devices)
           PopupMenuItem(
-              value: 'transfer',
+              value: 'transfer:${d.path}',
               child: _MenuItem(
                   icon: Icons.download,
-                  label: 'Transfer to ${device.label}')),
+                  label: 'Transfer to ${d.label}')),
         const PopupMenuItem(
             value: 'playlist',
             child: _MenuItem(
@@ -306,13 +308,13 @@ class _SongTableRow extends ConsumerWidget {
       ref
           .read(playbackProvider.notifier)
           .playSong(song, queue: allSongs, index: index);
-    } else if (result == 'transfer') {
-      final d = ref.read(selectedDeviceProvider);
+    } else if (result != null && result.startsWith('transfer:')) {
+      final devicePath = result.substring(9);
       final repo = ref.read(libraryRepositoryProvider);
-      if (d != null && repo != null) {
+      if (repo != null) {
         ref
             .read(transferQueueProvider.notifier)
-            .enqueue([song], d.path, repo.downloadUri);
+            .enqueue([song], devicePath, repo.downloadUri);
       }
     } else if (result == 'playlist') {
       showAddToPlaylistDialog(ctx, ref, [song.id]);

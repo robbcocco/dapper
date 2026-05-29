@@ -78,12 +78,34 @@ class LidarrArtist {
   }
 }
 
+enum LidarrAlbumType {
+  album,
+  ep,
+  single,
+  other;
+
+  static LidarrAlbumType fromString(String? s) => switch (s?.toLowerCase()) {
+        'album' => album,
+        'ep' => ep,
+        'single' => single,
+        _ => other,
+      };
+
+  String get label => switch (this) {
+        LidarrAlbumType.album => 'Albums',
+        LidarrAlbumType.ep => 'EPs',
+        LidarrAlbumType.single => 'Singles',
+        LidarrAlbumType.other => 'Other',
+      };
+}
+
 class LidarrAlbum {
   const LidarrAlbum({
     required this.id,
     required this.title,
     required this.monitored,
     required this.hasFile,
+    required this.albumType,
     this.releaseDate,
     this.coverUrl,
   });
@@ -94,6 +116,7 @@ class LidarrAlbum {
 
   /// True when at least one track file has been imported.
   final bool hasFile;
+  final LidarrAlbumType albumType;
   final String? releaseDate;
   final String? coverUrl;
 
@@ -120,6 +143,7 @@ class LidarrAlbum {
       title: json['title'] as String? ?? '',
       monitored: json['monitored'] as bool? ?? false,
       hasFile: trackFileCount > 0,
+      albumType: LidarrAlbumType.fromString(json['albumType'] as String?),
       releaseDate: json['releaseDate'] as String?,
       coverUrl: cover,
     );

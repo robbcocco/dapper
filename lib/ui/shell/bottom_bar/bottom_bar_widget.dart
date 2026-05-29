@@ -294,11 +294,36 @@ class _TransferButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final queue = ref.watch(transferQueueProvider);
-    final active = queue.activeCount;
+    final (isEmpty, active, completed, total) = ref.watch(
+      transferQueueProvider.select((q) {
+        final countable = q.where((t) =>
+            t.status != TransferStatus.cancelled &&
+            t.status != TransferStatus.failed);
+        return (
+          q.isEmpty,
+          q.activeCount,
+          countable.where((t) => t.status == TransferStatus.completed).length,
+          countable.length,
+        );
+      }),
+    );
+    // Each in-progress song contributes its partial byte progress as a
+    // fraction of one song. m.length is the actual downloading count (≤ concurrency),
+    // not the full active count which includes queued songs.
+    final (inProgressFraction, inProgressCount) = ref.watch(
+      transferProgressProvider.select((m) {
+        if (m.isEmpty) return (0.0, 0);
+        var received = 0, totalBytes = 0;
+        for (final e in m.values) { received += e.$1; totalBytes += e.$2; }
+        return (totalBytes > 0 ? received / totalBytes : 0.0, m.length);
+      }),
+    );
+    final progress = total > 0
+        ? (completed + inProgressFraction * inProgressCount) / total
+        : 0.0;
     final hasActive = active > 0;
 
-    if (queue.isEmpty) return const SizedBox(width: 28, height: 28);
+    if (isEmpty) return const SizedBox(width: 28, height: 28);
 
     return Tooltip(
       message: hasActive
@@ -315,11 +340,8 @@ class _TransferButton extends ConsumerWidget {
                 ? SizedBox(
                     width: 14,
                     height: 14,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      value: queue.aggregateProgress > 0
-                          ? queue.aggregateProgress
-                          : null,
+                    child: _SpinningProgress(
+                      progress: progress,
                       color: ColorTokens.accent,
                     ),
                   )
@@ -428,12 +450,12 @@ class _TransferPopupContent extends ConsumerWidget {
   }
 }
 
-class _TaskRow extends StatelessWidget {
+class _TaskRow extends ConsumerWidget {
   const _TaskRow({required this.task});
   final TransferTask task;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final (icon, iconColor) = switch (task.status) {
       TransferStatus.completed => (Icons.check_circle_outline, Colors.green),
       TransferStatus.failed => (Icons.error_outline, Colors.redAccent),
@@ -441,9 +463,11 @@ class _TaskRow extends StatelessWidget {
       _ => (Icons.schedule, ColorTokens.textSecondary),
     };
 
-    final pct = task.status == TransferStatus.inProgress && task.totalBytes > 0
-        ? '${(task.progress * 100).round()}%'
-        : null;
+    final (received, total) = task.status == TransferStatus.inProgress
+        ? ref.watch(transferProgressProvider.select((m) =>
+            m[task.id] ?? (0, 0)))
+        : (0, 0);
+    final pct = total > 0 ? '${((received / total) * 100).round()}%' : null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
@@ -483,8 +507,7 @@ class _TaskRow extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(2),
                       child: LinearProgressIndicator(
-                        // null = indeterminate until we know total size
-                        value: task.totalBytes > 0 ? task.progress : null,
+                        value: total > 0 ? received / total : null,
                         minHeight: 2,
                         backgroundColor: ColorTokens.surfaceVariant,
                         valueColor:
@@ -503,6 +526,51 @@ class _TaskRow extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Spinning progress indicator ───────────────────────────────────────────────
+
+class _SpinningProgress extends StatefulWidget {
+  const _SpinningProgress({required this.progress, required this.color});
+  final double progress;
+  final Color color;
+
+  @override
+  State<_SpinningProgress> createState() => _SpinningProgressState();
+}
+
+class _SpinningProgressState extends State<_SpinningProgress>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RotationTransition(
+      turns: _ctrl,
+      child: CircularProgressIndicator(
+        strokeWidth: 1.5,
+        // Arc length = progress so you can still read completion at a glance,
+        // but the whole thing keeps rotating so it never looks frozen.
+        value: widget.progress > 0 ? widget.progress : null,
+        color: widget.color,
       ),
     );
   }

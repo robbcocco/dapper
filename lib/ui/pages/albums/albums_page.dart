@@ -11,7 +11,9 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/album.dart';
 import '../../../domain/models/artist.dart';
+import '../../../domain/models/connected_device.dart';
 import '../../../domain/models/song.dart';
+import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/sync_dot.dart';
@@ -70,6 +72,7 @@ class _ArtistAlbumsView extends ConsumerWidget {
         ?.fold<Artist?>(null, (prev, a) => a.id == artistId ? a : prev);
 
     final albums = ref.watch(albumsByArtistProvider(artistId));
+    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,17 +141,19 @@ class _ArtistAlbumsView extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        FilledButton.icon(
-                          onPressed: () => _transferAll(ref, artist.id),
-                          icon: const Icon(Icons.download, size: 15),
-                          label: const Text('Transfer All'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: ColorTokens.accent,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            textStyle: const TextStyle(fontSize: 11),
+                        if (devices.isNotEmpty)
+                          FilledButton.icon(
+                            onPressed: () => _pickAndTransferAll(
+                                context, ref, artist.id, devices),
+                            icon: const Icon(Icons.download, size: 15),
+                            label: const Text('Transfer All'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: ColorTokens.accent,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              textStyle: const TextStyle(fontSize: 11),
+                            ),
                           ),
-                        ),
                       ],
                     ),
                   ],
@@ -177,20 +182,35 @@ class _ArtistAlbumsView extends ConsumerWidget {
     );
   }
 
-  Future<void> _transferAll(WidgetRef ref, String artistId) async {
-    final device = ref.read(selectedDeviceProvider);
+  Future<void> _pickAndTransferAll(
+    BuildContext context,
+    WidgetRef ref,
+    String artistId,
+    List<ConnectedDevice> devices,
+  ) async {
+    final devicePath = await _pickDevicePath(context, devices);
+    if (devicePath == null) return;
+    await _transferAll(ref, devicePath, artistId);
+  }
+
+  Future<void> _transferAll(WidgetRef ref, String devicePath, String artistId) async {
     final repo = ref.read(libraryRepositoryProvider);
-    if (device == null || repo == null) return;
+    if (repo == null) return;
+    final settings = ref.read(deviceSettingsProvider(devicePath));
     final albums = await repo.getAlbumsByArtist(artistId);
     final allSongs = <Song>[];
+    final expectedCounts = <String, int>{};
     for (final album in albums) {
       final full = await repo.getAlbum(album.id);
       allSongs.addAll(full.songs);
+      final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
+      if (folder != null) expectedCounts[folder] = full.songCount;
     }
     if (allSongs.isEmpty) return;
     ref
         .read(transferQueueProvider.notifier)
-        .enqueue(allSongs, device.path, repo.downloadUri);
+        .enqueue(allSongs, devicePath, repo.downloadUri,
+            expectedAlbumSongCounts: expectedCounts);
   }
 }
 
@@ -315,13 +335,21 @@ class _AlbumCard extends ConsumerWidget {
     final device = ref.watch(selectedDeviceProvider);
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
-    final isSynced = settings != null &&
-        albumExistsOnDevice(album.artist, album.name, album.year, settings);
+    final albumSync = settings != null
+        ? albumSyncOnDevice(album.artist, album.name, album.year, album.songCount, settings)
+        : AlbumSyncStatus.absent;
+    final queue = ref.watch(transferQueueProvider);
+    final isActive = queue.any((t) =>
+        t.song.albumId == album.id && t.status == TransferStatus.inProgress);
+    final isQueued = !isActive &&
+        queue.any((t) =>
+            t.song.albumId == album.id && t.status == TransferStatus.queued);
+    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
 
     return GestureDetector(
       onTap: () =>
           ref.read(selectedAlbumIdProvider.notifier).state = album.id,
-      onSecondaryTapUp: (d) => _showMenu(context, ref, device, d.globalPosition),
+      onSecondaryTapUp: (d) => _showMenu(context, ref, devices, d.globalPosition),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -336,12 +364,31 @@ class _AlbumCard extends ConsumerWidget {
                     borderRadius: 6,
                   ),
                 ),
-                if (isSynced)
+                if (isActive || isQueued)
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: SyncDot(
+                      color: Colors.blue.withValues(alpha: 0.85),
+                      pulse: isActive,
+                      size: 10,
+                    ),
+                  )
+                else if (albumSync == AlbumSyncStatus.full)
                   Positioned(
                     right: 6,
                     bottom: 6,
                     child: SyncDot(
                       color: Colors.green.withValues(alpha: 0.85),
+                      size: 10,
+                    ),
+                  )
+                else if (albumSync == AlbumSyncStatus.partial)
+                  Positioned(
+                    right: 6,
+                    bottom: 6,
+                    child: SyncDot(
+                      color: Colors.orange.withValues(alpha: 0.85),
                       size: 10,
                     ),
                   ),
@@ -377,7 +424,7 @@ class _AlbumCard extends ConsumerWidget {
   void _showMenu(
     BuildContext context,
     WidgetRef ref,
-    dynamic device,
+    List<ConnectedDevice> devices,
     Offset pos,
   ) async {
     final result = await showMenu<String>(
@@ -389,10 +436,14 @@ class _AlbumCard extends ConsumerWidget {
           value: 'open',
           child: _CardMenuItem(icon: Icons.album_outlined, label: 'Open Album'),
         ),
-        if (device != null)
-          const PopupMenuItem(
-            value: 'transfer',
-            child: _CardMenuItem(icon: Icons.download, label: 'Transfer Album'),
+        for (final d in devices)
+          PopupMenuItem(
+            value: 'transfer:${d.path}',
+            child: _CardMenuItem(
+                icon: Icons.download,
+                label: devices.length == 1
+                    ? 'Transfer Album'
+                    : 'Transfer to ${d.label}'),
           ),
         const PopupMenuItem(
           value: 'playlist',
@@ -418,21 +469,52 @@ class _AlbumCard extends ConsumerWidget {
       return;
     }
 
-    if (result == 'transfer' || result == 'playlist') {
+    if (result != null && result.startsWith('transfer:')) {
+      final devicePath = result.substring(9);
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;
-      if (result == 'transfer') {
-        final d = ref.read(selectedDeviceProvider);
-        final repo = ref.read(libraryRepositoryProvider);
-        if (d == null || repo == null) return;
-        ref.read(transferQueueProvider.notifier)
-            .enqueue(full.songs, d.path, repo.downloadUri);
-      } else {
-        showAddToPlaylistDialog(
-            context, ref, full.songs.map((s) => s.id).toList());
-      }
+      final repo = ref.read(libraryRepositoryProvider);
+      if (repo == null) return;
+      final settings = ref.read(deviceSettingsProvider(devicePath));
+      final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
+      final expectedCounts = folder != null ? {folder: full.songCount} : null;
+      ref.read(transferQueueProvider.notifier)
+          .enqueue(full.songs, devicePath, repo.downloadUri,
+              expectedAlbumSongCounts: expectedCounts);
+    } else if (result == 'playlist') {
+      final full = await ref.read(albumProvider(album.id).future);
+      if (full == null || !context.mounted) return;
+      showAddToPlaylistDialog(
+          context, ref, full.songs.map((s) => s.id).toList());
     }
   }
+}
+
+// Returns the chosen device path, or null if cancelled / no devices.
+// Shows a picker dialog when multiple devices are connected.
+Future<String?> _pickDevicePath(
+  BuildContext context,
+  List<ConnectedDevice> devices,
+) async {
+  if (devices.isEmpty) return null;
+  if (devices.length == 1) return devices.first.path;
+  final result = await showDialog<ConnectedDevice>(
+    context: context,
+    builder: (_) => SimpleDialog(
+      backgroundColor: ColorTokens.surface,
+      title: const Text('Choose device',
+          style: TextStyle(color: ColorTokens.textPrimary, fontSize: 16)),
+      children: devices
+          .map((d) => SimpleDialogOption(
+                onPressed: () => Navigator.pop(context, d),
+                child: Text(d.label,
+                    style: const TextStyle(
+                        color: ColorTokens.textPrimary, fontSize: 13)),
+              ))
+          .toList(),
+    ),
+  );
+  return result?.path;
 }
 
 class _CardMenuItem extends StatelessWidget {

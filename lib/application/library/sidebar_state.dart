@@ -6,6 +6,7 @@ enum SidebarSection {
   albums,
   songs,
   playlists,
+  lidarr,
   device,
   settings,
 }

@@ -5,19 +5,25 @@ import 'package:path/path.dart' as p;
 import '../../core/extensions/string_extensions.dart';
 import '../../domain/models/device_settings.dart';
 import '../../domain/models/song.dart';
+import 'device_manifest.dart';
+
+// FAT32 limit: 255 UTF-16 code units per path component.
+const _kMaxPathComponent = 255;
+
+String _trunc(String s, [int max = _kMaxPathComponent]) =>
+    s.length > max ? s.substring(0, max) : s;
 
 /// Computes the absolute target path for a song on the device.
 String buildSongPath(Song song, DeviceSettings settings) {
   final artist =
-      (song.albumArtist ?? song.artist ?? 'Unknown Artist').toSafeFilename();
-  final rawAlbum = (song.album ?? 'Unknown Album').toSafeFilename();
+      _trunc((song.albumArtist ?? song.artist ?? 'Unknown Artist').toSafeFilename());
+  final rawAlbum = _trunc((song.album ?? 'Unknown Album').toSafeFilename());
   final year = song.year;
   final forceYear = settings.folderStructure == FolderStructure.artistAlbumYear;
   final addYear = (forceYear || settings.includeYear) && year != null && year > 0;
-  final albumFolder = addYear ? '$year - $rawAlbum' : rawAlbum;
+  final albumFolder = _trunc(addYear ? '$year - $rawAlbum' : rawAlbum);
 
   final ext = song.suffix ?? 'mp3';
-  final title = song.title.toSafeFilename();
   final trackNum = song.track;
   final disc = song.discNumber ?? 1;
   final prefix = switch (settings.filenameFormat) {
@@ -28,8 +34,12 @@ String buildSongPath(Song song, DeviceSettings settings) {
       trackNum != null ? '$disc-${trackNum.toString().padLeft(2, '0')}' : '',
   };
   final sep = settings.filenameFormat == FilenameFormat.discTrack ? ' - ' : ' ';
-  final filename =
-      prefix.isNotEmpty ? '$prefix$sep$title.$ext' : '$title.$ext';
+  final prefixPart = prefix.isNotEmpty ? '$prefix$sep' : '';
+  final dotExt = '.$ext';
+  final maxTitle = (_kMaxPathComponent - prefixPart.length - dotExt.length)
+      .clamp(1, _kMaxPathComponent);
+  final title = _trunc(song.title.toSafeFilename(), maxTitle);
+  final filename = '$prefixPart$title$dotExt';
 
   final root = settings.resolvedMusicRoot;
   return switch (settings.folderStructure) {
@@ -50,27 +60,73 @@ String? buildAlbumFolder(
       settings.folderStructure == FolderStructure.artistOnly) {
     return null;
   }
-  final artist = (albumArtist ?? 'Unknown Artist').toSafeFilename();
-  final rawAlbum = albumName.toSafeFilename();
+  final artist = _trunc((albumArtist ?? 'Unknown Artist').toSafeFilename());
+  final rawAlbum = _trunc(albumName.toSafeFilename());
   final forceYear = settings.folderStructure == FolderStructure.artistAlbumYear;
   final addYear = (forceYear || settings.includeYear) && year != null && year > 0;
-  final albumFolder = addYear ? '$year - $rawAlbum' : rawAlbum;
+  final albumFolder = _trunc(addYear ? '$year - $rawAlbum' : rawAlbum);
   return p.join(settings.resolvedMusicRoot, artist, albumFolder);
 }
 
-/// True if the album folder exists and contains at least one file.
+enum AlbumSyncStatus { absent, partial, full }
+
+/// Returns the sync status of an album on the device.
+/// [songCount] is the library's expected number of songs.
+/// Reads the manifest if present (prefers manifest.expectedSongCount over [songCount]);
+/// falls back to audio file count when no manifest exists.
+AlbumSyncStatus albumSyncOnDevice(
+    String? albumArtist, String albumName, int? year, int songCount, DeviceSettings settings) {
+  final folder = buildAlbumFolder(albumArtist, albumName, year, settings);
+  if (folder == null) return AlbumSyncStatus.absent;
+  final dir = Directory(folder);
+  if (!dir.existsSync()) return AlbumSyncStatus.absent;
+
+  final manifest = readManifest(folder);
+  if (manifest != null) {
+    final count = manifest.songs.length;
+    if (count == 0) return AlbumSyncStatus.absent;
+    final expected = manifest.expectedSongCount ?? songCount;
+    if (expected > 0 && count >= expected) return AlbumSyncStatus.full;
+    return AlbumSyncStatus.partial;
+  }
+
+  final fileCount =
+      dir.listSync().whereType<File>().where(isAudioFile).length;
+  if (fileCount == 0) return AlbumSyncStatus.absent;
+  if (songCount > 0 && fileCount >= songCount) return AlbumSyncStatus.full;
+  return AlbumSyncStatus.partial;
+}
+
+/// True if the album folder exists and contains at least one audio file.
 bool albumExistsOnDevice(
     String? albumArtist, String albumName, int? year, DeviceSettings settings) {
   final folder = buildAlbumFolder(albumArtist, albumName, year, settings);
   if (folder == null) return false;
   final dir = Directory(folder);
   if (!dir.existsSync()) return false;
-  return dir.listSync().any((e) => e is File);
+  final manifest = readManifest(folder);
+  if (manifest != null) return manifest.songs.isNotEmpty;
+  return dir.listSync().whereType<File>().any(isAudioFile);
 }
 
-/// True if the song file already exists at its expected device path.
-bool songExistsOnDevice(Song song, DeviceSettings settings) =>
-    File(buildSongPath(song, settings)).existsSync();
+/// True if the song is present on the device.
+/// Checks the album folder manifest by song ID first (reliable even when the
+/// filename differs from the expected pattern); falls back to the file path.
+bool songExistsOnDevice(Song song, DeviceSettings settings) {
+  final folder = buildAlbumFolder(
+    song.albumArtist ?? song.artist,
+    song.album ?? 'Unknown Album',
+    song.year,
+    settings,
+  );
+  if (folder != null) {
+    final manifest = readManifest(folder);
+    if (manifest != null) {
+      return manifest.songs.any((s) => s.id == song.id);
+    }
+  }
+  return File(buildSongPath(song, settings)).existsSync();
+}
 
 /// True if the artist folder exists on device (meaningless for flat structure).
 /// Use this as a fallback for structures that don't produce per-album folders.

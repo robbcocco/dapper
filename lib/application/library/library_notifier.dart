@@ -57,12 +57,13 @@ class AllAlbumsState {
     bool? isLoading,
     bool? hasMore,
     Object? error,
+    bool clearError = false,
   }) =>
       AllAlbumsState(
         albums: albums ?? this.albums,
         isLoading: isLoading ?? this.isLoading,
         hasMore: hasMore ?? this.hasMore,
-        error: error,
+        error: clearError ? null : (error ?? this.error),
       );
 }
 
@@ -71,6 +72,7 @@ class AllAlbumsNotifier extends Notifier<AllAlbumsState> {
 
   @override
   AllAlbumsState build() {
+    ref.watch(libraryRepositoryProvider); // reset when active server changes
     _loadInitial();
     return const AllAlbumsState(isLoading: true);
   }
@@ -92,6 +94,25 @@ class AllAlbumsNotifier extends Notifier<AllAlbumsState> {
       state = AllAlbumsState(albums: all, isLoading: false, hasMore: false);
     } catch (e) {
       state = AllAlbumsState(isLoading: false, error: e);
+    }
+  }
+
+  Future<void> refresh() async {
+    if (state.isLoading) return;
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final repo = ref.read(libraryRepositoryProvider);
+      if (repo == null) return;
+      final all = <Album>[];
+      while (true) {
+        final batch =
+            await repo.getAllAlbums(size: _pageSize, offset: all.length);
+        all.addAll(batch);
+        if (batch.length < _pageSize) break;
+      }
+      state = AllAlbumsState(albums: all, isLoading: false, hasMore: false);
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e);
     }
   }
 
@@ -137,12 +158,13 @@ class AllSongsState {
     bool? isLoading,
     bool? hasMore,
     Object? error,
+    bool clearError = false,
   }) =>
       AllSongsState(
         songs: songs ?? this.songs,
         isLoading: isLoading ?? this.isLoading,
         hasMore: hasMore ?? this.hasMore,
-        error: error,
+        error: clearError ? null : (error ?? this.error),
       );
 }
 
@@ -151,6 +173,7 @@ class AllSongsNotifier extends Notifier<AllSongsState> {
 
   @override
   AllSongsState build() {
+    ref.watch(libraryRepositoryProvider); // reset when active server changes
     _loadInitial();
     return const AllSongsState(isLoading: true);
   }
@@ -170,6 +193,23 @@ class AllSongsNotifier extends Notifier<AllSongsState> {
       );
     } catch (e) {
       state = AllSongsState(isLoading: false, error: e);
+    }
+  }
+
+  Future<void> refresh() async {
+    if (state.isLoading) return;
+    state = state.copyWith(isLoading: true, clearError: true);
+    try {
+      final repo = ref.read(libraryRepositoryProvider);
+      if (repo == null) return;
+      final songs = await repo.getAllSongs(count: _pageSize, offset: 0);
+      state = AllSongsState(
+        songs: songs,
+        isLoading: false,
+        hasMore: songs.length == _pageSize,
+      );
+    } catch (e) {
+      state = state.copyWith(isLoading: false, error: e);
     }
   }
 

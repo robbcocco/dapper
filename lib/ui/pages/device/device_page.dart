@@ -1,13 +1,19 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../application/device/device_prune.dart';
+import '../../../application/device/device_scan.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_queue_notifier.dart';
 import '../../../core/theme/color_tokens.dart';
+import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/transfer_task.dart';
+import '../../../domain/repositories/library_repository.dart';
 import 'device_file_browser.dart';
 import 'device_settings_dialog.dart';
 
@@ -118,7 +124,16 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              if (selected != null)
+              if (selected != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.manage_search,
+                      size: 16, color: ColorTokens.textSecondary),
+                  tooltip: 'Scan device library',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () => _showScanDialog(context, ref, selected.path),
+                ),
                 IconButton(
                   icon: const Icon(Icons.settings_outlined,
                       size: 16, color: ColorTokens.textSecondary),
@@ -129,6 +144,7 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
                   onPressed: () =>
                       DeviceSettingsDialog.show(context, selected.path),
                 ),
+              ],
             ],
           ),
         ),
@@ -237,6 +253,463 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Device scan ───────────────────────────────────────────────────────────────
+
+Future<void> _showScanDialog(
+    BuildContext context, WidgetRef ref, String devicePath) async {
+  final settings = ref.read(deviceSettingsProvider(devicePath));
+  final repo = ref.read(libraryRepositoryProvider);
+  if (repo == null) return;
+
+  await showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _ScanDialog(settings: settings, repo: repo),
+  );
+}
+
+class _ScanDialog extends StatefulWidget {
+  const _ScanDialog({required this.settings, required this.repo});
+  final DeviceSettings settings;
+  final LibraryRepository repo;
+
+  @override
+  State<_ScanDialog> createState() => _ScanDialogState();
+}
+
+class _ScanDialogState extends State<_ScanDialog> {
+  String _status = 'Starting scan…';
+  DeviceScanResult? _result;
+
+  bool _pruning = false;
+  String _pruneStatus = '';
+  PruneResult? _pruneResult;
+
+  @override
+  void initState() {
+    super.initState();
+    _runScan();
+  }
+
+  Future<void> _runScan() async {
+    try {
+      final result = await scanDevice(
+        widget.settings,
+        widget.repo,
+        onProgress: (msg) {
+          if (mounted) setState(() => _status = msg);
+        },
+      );
+      if (mounted) setState(() => _result = result);
+    } catch (e) {
+      if (mounted) setState(() => _status = 'Error: $e');
+    }
+  }
+
+  Future<void> _runPrune() async {
+    setState(() {
+      _pruning = true;
+      _pruneStatus = 'Starting prune…';
+    });
+    try {
+      final result = await pruneDevice(
+        widget.settings,
+        widget.repo,
+        onProgress: (msg) {
+          if (mounted) setState(() => _pruneStatus = msg);
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _pruneResult = result;
+          _pruning = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _pruneStatus = 'Error: $e';
+          _pruning = false;
+        });
+      }
+    }
+  }
+
+  String _bytesHuman(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  Future<void> _resolveFileDuplicate(FileDuplicate dup) async {
+    for (final filename in dup.deletable) {
+      final file = File(p.join(dup.folderPath, filename));
+      if (file.existsSync()) await file.delete();
+    }
+    if (mounted) {
+      setState(() => _result = _result!.withoutFileDuplicate(dup));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final result = _result;
+    return AlertDialog(
+      backgroundColor: ColorTokens.surface,
+      title: const Text('Scan Device Library',
+          style: TextStyle(color: ColorTokens.textPrimary, fontSize: 16)),
+      content: SizedBox(
+        width: 440,
+        child: result == null
+            ? Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
+                  Text(_status,
+                      style: const TextStyle(
+                          fontSize: 12, color: ColorTokens.textSecondary)),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _ScanStat('Albums scanned', result.albumsScanned),
+                  _ScanStat('Albums with audio files', result.albumsMatched),
+                  _ScanStat('Songs matched & added to manifests',
+                      result.songsMatched),
+                  if (result.hasDuplicates) ...[
+                    const SizedBox(height: 12),
+                    const Divider(color: ColorTokens.divider),
+                    // ── File duplicates (same track number, different names) ──
+                    if (result.fileDuplicates.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 6),
+                        child: Text(
+                          '${result.fileDuplicates.length} folder${result.fileDuplicates.length == 1 ? '' : 's'} with same-track duplicates',
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.orange),
+                        ),
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 260),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: result.fileDuplicates.length,
+                          separatorBuilder: (_, __) => const Divider(
+                              color: ColorTokens.divider, height: 1),
+                          itemBuilder: (_, i) => _FileDuplicateRow(
+                            dup: result.fileDuplicates[i],
+                            onResolve: () => _resolveFileDuplicate(
+                                result.fileDuplicates[i]),
+                          ),
+                        ),
+                      ),
+                    ],
+                    // ── Manifest duplicates (same song ID in multiple folders) ──
+                    if (result.manifestDuplicates.isNotEmpty) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 6),
+                        child: Text(
+                          '${result.manifestDuplicates.length} song${result.manifestDuplicates.length == 1 ? '' : 's'} in multiple folders',
+                          style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.orange),
+                        ),
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 160),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: result.manifestDuplicates.length,
+                          separatorBuilder: (_, __) => const Divider(
+                              color: ColorTokens.divider, height: 1),
+                          itemBuilder: (_, i) {
+                            final dup = result.manifestDuplicates[i];
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 5),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(dup.title,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          color: ColorTokens.textPrimary)),
+                                  for (final path in dup.folderPaths)
+                                    Text('  $path',
+                                        style: const TextStyle(
+                                            fontSize: 10,
+                                            color: ColorTokens.textSecondary),
+                                        overflow: TextOverflow.ellipsis),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    const Text('No duplicates found.',
+                        style: TextStyle(
+                            fontSize: 12, color: ColorTokens.textSecondary)),
+                  ],
+                  if (result.albumsScanned == 0 &&
+                      result.fileDuplicates.isEmpty) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Scan is only supported for Artist/Album folder structures.',
+                      style: TextStyle(
+                          fontSize: 12, color: ColorTokens.textSecondary),
+                    ),
+                  ],
+                  // ── Prune section ─────────────────────────────────────────
+                  const SizedBox(height: 8),
+                  const Divider(color: ColorTokens.divider),
+                  const SizedBox(height: 4),
+                  if (_pruneResult != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Orphan songs removed',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: ColorTokens.textSecondary)),
+                          ),
+                          Text('${_pruneResult!.songsRemoved}',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ColorTokens.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Space freed',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: ColorTokens.textSecondary)),
+                          ),
+                          Text(_bytesHuman(_pruneResult!.bytesFreed),
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ColorTokens.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    if (_pruneResult!.errors.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '${_pruneResult!.errors.length} file(s) could not be deleted',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.orange),
+                        ),
+                      ),
+                  ] else if (_pruning) ...[
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(
+                                  ColorTokens.textSecondary)),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(_pruneStatus,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: ColorTokens.textSecondary)),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Prune orphan files',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: ColorTokens.textPrimary)),
+                              Text(
+                                  'Remove songs no longer in the library',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: ColorTokens.textSecondary)),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _runPrune,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Prune',
+                              style:
+                                  TextStyle(color: Colors.orange, fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+      ),
+      actions: [
+        if (result != null)
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Done',
+                style: TextStyle(color: ColorTokens.accent)),
+          ),
+      ],
+    );
+  }
+}
+
+class _FileDuplicateRow extends StatelessWidget {
+  const _FileDuplicateRow({required this.dup, required this.onResolve});
+  final FileDuplicate dup;
+  final VoidCallback onResolve;
+
+  @override
+  Widget build(BuildContext context) {
+    // Show correct file first, then deletable ones.
+    final ordered = [
+      if (dup.correctFilename != null) dup.correctFilename!,
+      ...dup.filenames.where((f) => f != dup.correctFilename),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            dup.folderPath,
+            style: const TextStyle(
+                fontSize: 10, color: ColorTokens.textSecondary),
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 4),
+          for (final name in ordered) _FileEntry(name: name, dup: dup),
+          const SizedBox(height: 6),
+          if (dup.canResolve)
+            TextButton.icon(
+              onPressed: onResolve,
+              style: TextButton.styleFrom(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: const Icon(Icons.delete_outline,
+                  size: 13, color: Colors.redAccent),
+              label: Text(
+                'Delete ${dup.deletable.length} duplicate${dup.deletable.length == 1 ? '' : 's'}',
+                style:
+                    const TextStyle(fontSize: 11, color: Colors.redAccent),
+              ),
+            )
+          else
+            const Text(
+              'Cannot determine which file to keep — delete manually.',
+              style: TextStyle(fontSize: 10, color: ColorTokens.textSecondary),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FileEntry extends StatelessWidget {
+  const _FileEntry({required this.name, required this.dup});
+  final String name;
+  final FileDuplicate dup;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCorrect = name == dup.correctFilename;
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        children: [
+          Icon(
+            isCorrect ? Icons.check_circle_outline : Icons.remove_circle_outline,
+            size: 12,
+            color: isCorrect ? Colors.green : Colors.redAccent,
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(
+                fontSize: 11,
+                color: isCorrect
+                    ? ColorTokens.textPrimary
+                    : ColorTokens.textSecondary,
+                decoration:
+                    isCorrect ? null : TextDecoration.lineThrough,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScanStat extends StatelessWidget {
+  const _ScanStat(this.label, this.value);
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 12, color: ColorTokens.textSecondary)),
+          ),
+          Text('$value',
+              style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: ColorTokens.textPrimary)),
+        ],
+      ),
     );
   }
 }
