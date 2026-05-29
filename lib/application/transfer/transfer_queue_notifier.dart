@@ -29,6 +29,12 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   // Per-folder write chains: serializes concurrent manifest updates for the
   // same album folder without blocking the main thread.
   final _manifestFutures = <String, Future<void>>{};
+  // Playlist M3U write: written after all songs in the group complete so the
+  // file is only created once every song path actually exists on device.
+  // taskId → groupId, groupId → (playlist, devicePath, remaining count)
+  final _taskPlaylistGroup = <String, String>{};
+  final _pendingPlaylistWrites =
+      <String, ({Playlist playlist, String devicePath, int remaining})>{};
 
   @override
   List<TransferTask> build() {
@@ -95,14 +101,29 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     _startEngineForDevice(devicePath, downloadUri);
   }
 
-  Future<void> enqueuePlaylist(
+  void enqueuePlaylist(
     Playlist playlist,
     String devicePath,
     Uri Function(String) downloadUri,
-  ) async {
-    final settings = ref.read(deviceSettingsProvider(devicePath));
-    enqueue(playlist.songs, devicePath, downloadUri);
-    await writePlaylistM3u(playlist, settings);
+  ) {
+    if (playlist.songs.isEmpty) return;
+
+    final groupId = _uuid.v4();
+    final newTasks = playlist.songs
+        .map((s) => TransferTask(id: _uuid.v4(), song: s, devicePath: devicePath))
+        .toList();
+
+    for (final t in newTasks) {
+      _taskPlaylistGroup[t.id] = groupId;
+    }
+    _pendingPlaylistWrites[groupId] = (
+      playlist: playlist,
+      devicePath: devicePath,
+      remaining: newTasks.length,
+    );
+
+    state = [...state, ...newTasks];
+    _startEngineForDevice(devicePath, downloadUri);
   }
 
   void cancel(String taskId) {
@@ -209,7 +230,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         _appendManifest(albumFolder, task.song,
             expectedSongCount: _expectedSongCounts[albumFolder],
             filename: p.basename(targetPath));
-        return;
+        return; // finally handles group tracking
       }
 
       await Directory(p.dirname(targetPath)).create(recursive: true);
@@ -230,6 +251,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
               (m) => {...m, task.id: (received, total)});
         },
       );
+      await removeMacOSSidecar(targetPath);
 
       _updateTask(task.id,
           (t) => t.copyWith(status: TransferStatus.completed));
@@ -240,6 +262,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         expectedSongCount: _expectedSongCounts[albumFolder],
         filename: p.basename(targetPath),
       );
+      // finally handles group tracking
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) return; // already marked cancelled
       _updateTask(task.id, (t) => t.copyWith(
@@ -263,10 +286,33 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         if (!m.containsKey(task.id)) return m;
         return Map.of(m)..remove(task.id);
       });
+      _onGroupTaskDone(task.id);
     }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  // Decrements the playlist song counter for this task; writes the M3U once
+  // every song in the group has finished (success, failure, or cancellation),
+  // including only songs that actually exist on device.
+  void _onGroupTaskDone(String taskId) {
+    final groupId = _taskPlaylistGroup.remove(taskId);
+    if (groupId == null) return;
+    final entry = _pendingPlaylistWrites[groupId];
+    if (entry == null) return;
+    final newRemaining = entry.remaining - 1;
+    if (newRemaining > 0) {
+      _pendingPlaylistWrites[groupId] = (
+        playlist: entry.playlist,
+        devicePath: entry.devicePath,
+        remaining: newRemaining,
+      );
+      return;
+    }
+    _pendingPlaylistWrites.remove(groupId);
+    final settings = ref.read(deviceSettingsProvider(entry.devicePath));
+    writePlaylistM3u(entry.playlist, settings).catchError((_) {});
+  }
 
   // Chains async manifest writes per folder so concurrent completions for the
   // same album don't race on the same file — without blocking the main thread.

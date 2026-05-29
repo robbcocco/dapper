@@ -34,9 +34,24 @@ class AppShell extends ConsumerWidget {
     ref.listen(connectedDevicesProvider, (_, next) {
       final devices = next.valueOrNull ?? [];
       final selected = ref.read(selectedDeviceProvider);
-      if (selected != null && !devices.any((d) => d.path == selected.path)) {
-        ref.read(selectedDeviceProvider.notifier).state = null;
-      } else if (selected == null && devices.length == 1) {
+
+      if (selected != null) {
+        final stillPresent = devices.any((d) => d.path == selected.path);
+        if (!stillPresent) {
+          ref.read(selectedDeviceProvider.notifier).state = null;
+          // Navigate away so the sidebar doesn't orphan its selection highlight.
+          if (ref.read(selectedSectionProvider) == SidebarSection.device) {
+            ref.read(selectedSectionProvider.notifier).state =
+                SidebarSection.recentlyAdded;
+          }
+        } else {
+          // Refresh stored object so availableBytes etc. stay current.
+          final fresh = devices.firstWhere((d) => d.path == selected.path);
+          if (fresh != selected) {
+            ref.read(selectedDeviceProvider.notifier).state = fresh;
+          }
+        }
+      } else if (devices.length == 1) {
         ref.read(selectedDeviceProvider.notifier).state = devices.first;
       }
     });

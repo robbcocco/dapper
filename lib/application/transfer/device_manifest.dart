@@ -12,8 +12,34 @@ const _kAudioExtensions = {
   '.opus', '.wma', '.ape', '.aiff', '.dsf', '.dff',
 };
 
-bool isAudioFile(File f) =>
-    _kAudioExtensions.contains(p.extension(f.path).toLowerCase());
+bool isAudioFile(File f) {
+  final name = p.basename(f.path);
+  if (name.startsWith('._')) return false;
+  return _kAudioExtensions.contains(p.extension(f.path).toLowerCase());
+}
+
+const _kPlaylistExtensions = {'.m3u', '.m3u8'};
+
+bool isPlaylistFile(File f) {
+  final name = p.basename(f.path);
+  if (name.startsWith('._')) return false;
+  return _kPlaylistExtensions.contains(p.extension(f.path).toLowerCase());
+}
+
+/// On macOS, removes the AppleDouble sidecar (._filename) that the OS writes
+/// when storing extended attributes on FAT32/exFAT volumes, then strips all
+/// xattrs from the file so the sidecar is not recreated.
+Future<void> removeMacOSSidecar(String filePath) async {
+  if (!Platform.isMacOS) return;
+  final sidecar =
+      File(p.join(p.dirname(filePath), '._${p.basename(filePath)}'));
+  if (await sidecar.exists()) {
+    try {
+      await sidecar.delete();
+    } catch (_) {}
+  }
+  await Process.run('xattr', ['-c', filePath]);
+}
 
 class ManifestSong {
   const ManifestSong({

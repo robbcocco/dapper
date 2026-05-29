@@ -10,8 +10,19 @@ const _audioExtensions = {
   'wav', 'aiff', 'aif', 'ape', 'wv', 'dsf', 'dff',
 };
 
-bool _isAudio(String path) =>
-    _audioExtensions.contains(p.extension(path).toLowerCase().replaceFirst('.', ''));
+const _playlistExtensions = {'m3u', 'm3u8'};
+
+bool _isAudio(String path) {
+  if (p.basename(path).startsWith('._')) return false;
+  return _audioExtensions.contains(
+      p.extension(path).toLowerCase().replaceFirst('.', ''));
+}
+
+bool _isPlaylist(String path) {
+  if (p.basename(path).startsWith('._')) return false;
+  return _playlistExtensions.contains(
+      p.extension(path).toLowerCase().replaceFirst('.', ''));
+}
 
 class DeviceFileBrowser extends StatefulWidget {
   const DeviceFileBrowser({super.key, required this.rootPath});
@@ -241,6 +252,8 @@ class _FolderNodeState extends State<_FolderNode> {
               );
             } else if (entity is File && _isAudio(entity.path)) {
               return _AudioFileRow(path: entity.path, depth: widget.depth + 1);
+            } else if (entity is File && _isPlaylist(entity.path)) {
+              return _PlaylistFileRow(path: entity.path, depth: widget.depth + 1);
             }
             return const SizedBox.shrink();
           }),
@@ -250,10 +263,15 @@ class _FolderNodeState extends State<_FolderNode> {
 
   String _summary(List<FileSystemEntity> entities) {
     final dirs = entities.whereType<Directory>().length;
-    final files = entities.where((e) => e is File && _isAudio(e.path)).length;
+    final tracks = entities.where((e) => e is File && _isAudio(e.path)).length;
+    final playlists =
+        entities.where((e) => e is File && _isPlaylist(e.path)).length;
     final parts = <String>[];
     if (dirs > 0) parts.add('$dirs folder${dirs == 1 ? '' : 's'}');
-    if (files > 0) parts.add('$files track${files == 1 ? '' : 's'}');
+    if (tracks > 0) parts.add('$tracks track${tracks == 1 ? '' : 's'}');
+    if (playlists > 0) {
+      parts.add('$playlists playlist${playlists == 1 ? '' : 's'}');
+    }
     return parts.join(', ');
   }
 }
@@ -296,6 +314,51 @@ class _AudioFileRow extends StatelessWidget {
             child: Text(
               ext,
               style: const TextStyle(fontSize: 9, color: ColorTokens.textSecondary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlaylistFileRow extends StatelessWidget {
+  const _PlaylistFileRow({required this.path, required this.depth});
+
+  final String path;
+  final int depth;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = p.basenameWithoutExtension(path);
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 16.0 + depth * 16,
+        right: 16,
+        top: 2,
+        bottom: 2,
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.queue_music, size: 12, color: ColorTokens.textSecondary),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              name,
+              style: const TextStyle(fontSize: 11, color: ColorTokens.textSecondary),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: ColorTokens.surfaceVariant,
+              borderRadius: BorderRadius.circular(3),
+            ),
+            child: const Text(
+              'M3U',
+              style: TextStyle(fontSize: 9, color: ColorTokens.textSecondary),
             ),
           ),
         ],
