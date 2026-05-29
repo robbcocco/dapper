@@ -48,6 +48,11 @@ jobs:
           FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
           FLUTTER_XCODE_CODE_SIGNING_REQUIRED: NO
 
+      - name: Sign app (ad-hoc)
+        run: |
+          APP=$(find build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
+          codesign --deep --force --sign - "$APP"
+
       - name: Package .app
         run: |
           APP=$(find build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
