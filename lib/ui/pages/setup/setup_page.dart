@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
@@ -86,9 +88,8 @@ class _SetupPageState extends ConsumerState<SetupPage> {
 
   @override
   Widget build(BuildContext context) {
-    return TitlebarSafeArea(
-      child: Center(
-        child: SingleChildScrollView(
+    final content = Center(
+      child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
           child: SizedBox(
             width: 400,
@@ -242,10 +243,11 @@ class _SetupPageState extends ConsumerState<SetupPage> {
             ),
           ),
         ),
-      ),
     );
+    return Platform.isMacOS ? TitlebarSafeArea(child: content) : content;
   }
 }
+
 
 // ── Shared form field ─────────────────────────────────────────────────────────
 

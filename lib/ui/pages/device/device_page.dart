@@ -769,25 +769,29 @@ class _QueueList extends ConsumerWidget {
                 const Icon(Icons.lock_outline,
                     size: 16, color: Colors.redAccent),
                 const SizedBox(width: 10),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'macOS blocked write access to the device.\n'
-                    'Grant Full Disk Access to Dapper in System Settings.',
-                    style: TextStyle(fontSize: 11, color: Colors.redAccent),
+                    Platform.isMacOS
+                        ? 'macOS blocked write access to the device.\nGrant Full Disk Access to Dapper in System Settings.'
+                        : 'Write access to the device was denied.\nCheck file permissions.',
+                    style: const TextStyle(
+                        fontSize: 11, color: Colors.redAccent),
                   ),
                 ),
-                const SizedBox(width: 10),
-                TextButton(
-                  onPressed: _openPrivacySettings,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    minimumSize: Size.zero,
+                if (Platform.isMacOS) ...[
+                  const SizedBox(width: 10),
+                  TextButton(
+                    onPressed: _openPrivacySettings,
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      minimumSize: Size.zero,
+                    ),
+                    child: const Text('Open Settings',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.redAccent)),
                   ),
-                  child: const Text('Open Settings',
-                      style:
-                          TextStyle(fontSize: 11, color: Colors.redAccent)),
-                ),
+                ],
               ],
             ),
           ),
@@ -822,6 +826,7 @@ class _QueueList extends ConsumerWidget {
   }
 
   void _openPrivacySettings() {
+    if (!Platform.isMacOS) return;
     Process.run('open', [
       'x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles',
     ]);

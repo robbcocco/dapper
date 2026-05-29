@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build-macos:
     runs-on: macos-latest
 
     steps:
@@ -48,6 +48,60 @@ jobs:
           FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
           FLUTTER_XCODE_CODE_SIGNING_REQUIRED: NO
 
+      - name: Package .app
+        run: |
+          APP=$(find build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
+          cd build/macos/Build/Products/Release
+          zip -r "$GITHUB_WORKSPACE/dapper-macos.zip" "$(basename "$APP")"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dapper-macos
+          path: dapper-macos.zip
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-flutter-
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Windows
+        run: flutter build windows --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dapper-windows.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dapper-windows
+          path: dapper-windows.zip
+
+  release:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Resolve version and tag
         id: meta
         run: |
@@ -56,11 +110,13 @@ jobs:
           echo "semver=$SEMVER" >> $GITHUB_OUTPUT
           echo "tag=$TAG" >> $GITHUB_OUTPUT
 
-      - name: Package .app
-        run: |
-          APP=$(find build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
-          cd build/macos/Build/Products/Release
-          zip -r "$GITHUB_WORKSPACE/dapper-macos.zip" "$(basename "$APP")"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dapper-macos
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dapper-windows
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -68,4 +124,6 @@ jobs:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: Dapper ${{ steps.meta.outputs.semver }} (build ${{ github.run_number }})
           generate_release_notes: true
-          files: dapper-macos.zip
+          files: |
+            dapper-macos.zip
+            dapper-windows.zip

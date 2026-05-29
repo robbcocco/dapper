@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
@@ -71,11 +73,8 @@ class AppShell extends ConsumerWidget {
     const sW = AppConstants.sidebarWidth;
     const bH = AppConstants.bottomBarHeight;
 
-    return Scaffold(
-      backgroundColor: ColorTokens.background,
-      body: TitlebarSafeArea(
-        child: Stack(
-          children: [
+    final stack = Stack(
+      children: [
             // ── Main content ───────────────────────────────────────────────
             // Fills all the way to the window bottom so content flows behind
             // the floating bar naturally (bar overlays, not clips).
@@ -126,9 +125,11 @@ class AppShell extends ConsumerWidget {
                 },
               ),
             ),
-          ],
-        ),
-      ),
+      ],
+    );
+    return Scaffold(
+      backgroundColor: ColorTokens.background,
+      body: Platform.isMacOS ? TitlebarSafeArea(child: stack) : stack,
     );
   }
 }

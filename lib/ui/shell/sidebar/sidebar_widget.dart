@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
@@ -95,11 +97,14 @@ class SidebarWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const TransparentMacOSSidebar(
-      material: NSVisualEffectViewMaterial.sidebar,
-      state: NSVisualEffectViewState.active,
-      child: _SidebarContent(),
-    );
+    if (Platform.isMacOS) {
+      return const TransparentMacOSSidebar(
+        material: NSVisualEffectViewMaterial.sidebar,
+        state: NSVisualEffectViewState.active,
+        child: _SidebarContent(),
+      );
+    }
+    return const _SidebarContent();
   }
 }
 

@@ -7,7 +7,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  build-macos:
     runs-on: macos-latest
 
     steps:
@@ -45,3 +45,29 @@ jobs:
           FLUTTER_XCODE_CODE_SIGNING_ALLOWED: NO
           FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
           FLUTTER_XCODE_CODE_SIGNING_REQUIRED: NO
+
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.pub-cache
+          key: ${{ runner.os }}-flutter-${{ hashFiles('pubspec.lock') }}
+          restore-keys: ${{ runner.os }}-flutter-
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Build Windows
+        run: flutter build windows --release

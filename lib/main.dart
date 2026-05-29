@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
@@ -14,13 +16,13 @@ void main() async {
 
   final supportDir = await getApplicationSupportDirectory();
 
-  // Initialize macos_window_utils — enables NSVisualEffectView and window APIs.
-  await WindowManipulator.initialize();
-  WindowManipulator.setWindowBackgroundColorToClear();
-  WindowManipulator.makeTitlebarTransparent();
-  WindowManipulator.enableFullSizeContentView();
-  // Window-level vibrancy material — visible behind any transparent Flutter content.
-  WindowManipulator.setMaterial(NSVisualEffectViewMaterial.underWindowBackground);
+  if (Platform.isMacOS) {
+    await WindowManipulator.initialize();
+    WindowManipulator.setWindowBackgroundColorToClear();
+    WindowManipulator.makeTitlebarTransparent();
+    WindowManipulator.enableFullSizeContentView();
+    WindowManipulator.setMaterial(NSVisualEffectViewMaterial.underWindowBackground);
+  }
 
   await windowManager.ensureInitialized();
   await windowManager.setMinimumSize(AppConstants.minWindowSize);

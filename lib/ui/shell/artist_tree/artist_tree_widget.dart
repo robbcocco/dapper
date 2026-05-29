@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:macos_window_utils/macos_window_utils.dart';
@@ -15,11 +17,14 @@ class ArtistTreeWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return VisualEffectSubviewContainer(
-      material: NSVisualEffectViewMaterial.sidebar,
-      state: NSVisualEffectViewState.active,
-      child: const _ArtistTreeContent(),
-    );
+    if (Platform.isMacOS) {
+      return VisualEffectSubviewContainer(
+        material: NSVisualEffectViewMaterial.sidebar,
+        state: NSVisualEffectViewState.active,
+        child: const _ArtistTreeContent(),
+      );
+    }
+    return const _ArtistTreeContent();
   }
 }
 
