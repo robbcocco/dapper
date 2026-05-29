@@ -219,7 +219,8 @@ void _collectFileDuplicates(
             .putIfAbsent(prefix, () => [])
             .add(p.basename(entity.path));
       }
-    } else if (entity is Directory) {
+    } else if (entity is Directory &&
+        !p.basename(entity.path).startsWith('.')) {
       _collectFileDuplicates(entity, out, settings);
     }
   }

@@ -39,6 +39,10 @@ dependencies:
   macos_window_utils: ^1.4.0
   cached_network_image: ^3.4.1
 
+  # Windows drive detection (win32 FFI)
+  ffi: ^2.1.0
+  win32: ^5.5.0
+
   # Crypto (MD5 for Subsonic auth)
   crypto: ^3.0.6
 

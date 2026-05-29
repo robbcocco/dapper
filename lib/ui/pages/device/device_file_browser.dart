@@ -166,6 +166,9 @@ class _FolderNodeState extends State<_FolderNode> {
     }
     setState(() => _loading = true);
     Directory(widget.path).list().toList().then((entities) {
+      entities.removeWhere(
+        (e) => p.basename(e.path).startsWith('.'),
+      );
       entities.sort((a, b) {
         final aIsDir = a is Directory;
         final bIsDir = b is Directory;
