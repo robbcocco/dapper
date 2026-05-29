@@ -29,6 +29,7 @@ class SubsonicClient {
     _dio = Dio(BaseOptions(
       baseUrl: baseUrl,
       connectTimeout: const Duration(seconds: 10),
+      sendTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 30),
     ))
       ..interceptors.add(_AuthInterceptor(username, password))

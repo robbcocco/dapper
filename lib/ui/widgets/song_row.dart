@@ -32,11 +32,10 @@ class SongRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final starred = ref.watch(starredProvider);
-    final isStarred = starred.contains(song.id);
-    final currentSong = ref.watch(
-        playbackProvider.select((s) => s.currentSong));
-    final isPlaying = currentSong?.id == song.id;
+    final isStarred =
+        ref.watch(starredProvider.select((s) => s.contains(song.id)));
+    final isPlaying = ref.watch(
+        playbackProvider.select((s) => s.currentSong?.id == song.id));
 
     final rowHeight = showArtist ? 48.0 : 40.0;
 

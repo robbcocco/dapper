@@ -11,6 +11,14 @@ class SubsonicApi {
 
   final SubsonicClient _client;
 
+  // Cover-art URIs are requested on every CoverArtImage rebuild — hundreds of
+  // times per second during scrolling / transfer progress ticks. Memoise by
+  // (coverArtId, size). Subsonic auth tokens are md5(password+salt) and don't
+  // expire server-side, so the cached URI stays valid until this SubsonicApi
+  // instance is replaced (which happens automatically on credential change
+  // because subsonicApiProvider rebuilds with the new client).
+  final Map<String, Uri> _coverArtUriCache = {};
+
   Future<bool> ping() async {
     final response = await _client.get(ApiConstants.ping);
     return response['status'] == 'ok';
@@ -234,8 +242,11 @@ class SubsonicApi {
     return ids;
   }
 
-  Uri coverArtUri(String coverArtId, {int size = 256}) =>
-      _client.buildUri(ApiConstants.getCoverArt, {'id': coverArtId, 'size': size});
+  Uri coverArtUri(String coverArtId, {int size = 256}) {
+    final key = '$coverArtId|$size';
+    return _coverArtUriCache[key] ??= _client
+        .buildUri(ApiConstants.getCoverArt, {'id': coverArtId, 'size': size});
+  }
 
   Uri streamUri(String songId) =>
       _client.buildUri(ApiConstants.stream, {'id': songId});

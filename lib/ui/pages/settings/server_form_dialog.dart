@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:developer' as dev;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -75,14 +78,30 @@ class _ServerFormDialogState extends ConsumerState<_ServerFormDialog> {
           await ref.read(serverRepositoryProvider).loadPassword(widget.existing!.id) ?? '';
     }
 
+    // Outer hard timeout: Dio's per-stage timeouts can fail to fire on macOS
+    // when the OS pends a connection awaiting Local Network privacy approval.
+    SubsonicClient? client;
     try {
-      final client = SubsonicClient(baseUrl: url, username: username, password: resolvedPassword);
-      final ok = await SubsonicApi(client).ping();
+      dev.log('ServerForm: testing $url as $username');
+      client = SubsonicClient(
+          baseUrl: url, username: username, password: resolvedPassword);
+      final ok = await SubsonicApi(client)
+          .ping()
+          .timeout(const Duration(seconds: 15));
       if (!ok) throw Exception('Server returned non-ok status');
+      dev.log('ServerForm: ping ok');
     } catch (e) {
-      if (mounted) setState(() { _saving = false; _error = 'Connection failed: $e'; });
+      dev.log('ServerForm: test failed — $e');
+      client?.dispose();
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = _friendlyError(e.toString());
+        });
+      }
       return;
     }
+    client.dispose();
 
     final server = _isEdit
         ? widget.existing!.copyWith(
@@ -97,19 +116,57 @@ class _ServerFormDialogState extends ConsumerState<_ServerFormDialog> {
             username: username,
           );
 
-    if (_isEdit) {
-      await ref.read(serversProvider.notifier).update(
-            server,
-            newPassword: password.isNotEmpty ? password : null,
-          );
-      if (password.isNotEmpty) {
-        ref.invalidate(serverCredentialsProvider);
+    try {
+      if (_isEdit) {
+        await ref.read(serversProvider.notifier).update(
+              server,
+              newPassword: password.isNotEmpty ? password : null,
+            );
+        if (password.isNotEmpty) {
+          ref.invalidate(serverCredentialsProvider);
+        }
+      } else {
+        await ref.read(serversProvider.notifier).add(server, resolvedPassword);
       }
-    } else {
-      await ref.read(serversProvider.notifier).add(server, resolvedPassword);
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      dev.log('ServerForm: failed to persist server — $e');
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = 'Could not save the server: $e';
+        });
+      }
     }
+  }
 
-    if (mounted) Navigator.of(context).pop(true);
+  String _friendlyError(String raw) {
+    if (raw.contains('TimeoutException') ||
+        raw.contains('connectionTimeout') ||
+        raw.contains('receiveTimeout') ||
+        raw.contains('sendTimeout')) {
+      return 'Timed out reaching the server. On macOS, check System '
+          'Settings → Privacy & Security → Local Network and make sure '
+          'Dapper is allowed. Also verify the URL includes the port '
+          '(e.g. http://192.168.1.10:4533).';
+    }
+    if (raw.contains('Network is unreachable') ||
+        raw.contains('No route to host')) {
+      return 'Network unreachable. Make sure this Mac is on the same '
+          'network as your Navidrome server.';
+    }
+    if (raw.contains('SocketException') ||
+        raw.contains('Failed host lookup') ||
+        raw.contains('Connection refused')) {
+      return 'Could not reach the server. Check the URL and your network.';
+    }
+    if (raw.contains('401') || raw.contains('Unauthorized')) {
+      return 'Invalid username or password.';
+    }
+    if (raw.contains('non-ok') || raw.contains('HandshakeException')) {
+      return 'Connected, but authentication failed. Check your credentials.';
+    }
+    return 'Connection failed: $raw';
   }
 
   @override

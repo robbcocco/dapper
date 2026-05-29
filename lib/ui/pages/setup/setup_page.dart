@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -45,12 +47,22 @@ class _SetupPageState extends ConsumerState<SetupPage> {
     final username = _userCtrl.text.trim();
     final password = _passCtrl.text;
 
+    // Outer hard timeout: Dio's per-stage timeouts can fail to fire on macOS
+    // when the OS pends a connection awaiting Local Network privacy approval.
+    // This guarantees the spinner stops within 15 s either way.
+    SubsonicClient? client;
     try {
-      final client =
+      dev.log('SetupPage: connecting to $url as $username');
+      client =
           SubsonicClient(baseUrl: url, username: username, password: password);
-      final ok = await SubsonicApi(client).ping();
+      final ok = await SubsonicApi(client)
+          .ping()
+          .timeout(const Duration(seconds: 15));
       if (!ok) throw Exception('non-ok');
+      dev.log('SetupPage: ping ok');
     } catch (e) {
+      dev.log('SetupPage: connect failed — $e');
+      client?.dispose();
       if (mounted) {
         setState(() {
           _connecting = false;
@@ -59,6 +71,9 @@ class _SetupPageState extends ConsumerState<SetupPage> {
       }
       return;
     }
+    // Successful ping: dispose the throwaway probe client (a fresh one is
+    // built by subsonicClientProvider once credentials land).
+    client.dispose();
 
     final host = Uri.tryParse(url)?.host ?? url;
     final server = NavidromeServer(
@@ -67,11 +82,40 @@ class _SetupPageState extends ConsumerState<SetupPage> {
       url: url,
       username: username,
     );
-    await ref.read(serversProvider.notifier).add(server, password);
-    // serverCredentialsProvider becomes non-null → AppShell rebuilds automatically.
+    try {
+      await ref.read(serversProvider.notifier).add(server, password);
+      // AppShell rebuilds and routes away from SetupPage. Reset state anyway
+      // so the spinner doesn't get stuck if that rebuild stalls.
+      if (mounted) setState(() => _connecting = false);
+    } catch (e) {
+      dev.log('SetupPage: failed to persist server — $e');
+      if (mounted) {
+        setState(() {
+          _connecting = false;
+          _error = 'Could not save the server: $e';
+        });
+      }
+    }
   }
 
   String _friendlyError(String raw) {
+    // Either our outer .timeout() wrapper or Dio's connectTimeout —
+    // most common on macOS Sequoia when Local Network privacy hasn't been
+    // granted, since the OS silently drops packets.
+    if (raw.contains('TimeoutException') ||
+        raw.contains('connectionTimeout') ||
+        raw.contains('receiveTimeout') ||
+        raw.contains('sendTimeout')) {
+      return 'Timed out reaching the server. On macOS, check System '
+          'Settings → Privacy & Security → Local Network and make sure '
+          'Dapper is allowed. Also verify the URL includes the port '
+          '(e.g. http://192.168.1.10:4533).';
+    }
+    if (raw.contains('Network is unreachable') ||
+        raw.contains('No route to host')) {
+      return 'Network unreachable. Make sure this Mac is on the same '
+          'network as your Navidrome server.';
+    }
     if (raw.contains('SocketException') ||
         raw.contains('Failed host lookup') ||
         raw.contains('Connection refused')) {

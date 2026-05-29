@@ -149,13 +149,23 @@ class _SongTableRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isPlaying = ref
         .watch(playbackProvider.select((s) => s.currentSong?.id == song.id));
-    final isStarred = ref.watch(starredProvider).contains(song.id);
+    final isStarred =
+        ref.watch(starredProvider.select((s) => s.contains(song.id)));
     final (isActive, isQueued) = ref.watch(
       transferQueueProvider.select((q) {
-        final active = q.any((t) =>
-            t.song.id == song.id && t.status == TransferStatus.inProgress);
-        return (active, !active && q.any((t) =>
-            t.song.id == song.id && t.status == TransferStatus.queued));
+        // Single pass with early exit: inProgress wins over queued, and once
+        // we've seen either we can stop scanning matching task entries.
+        var active = false;
+        var queued = false;
+        for (final t in q) {
+          if (t.song.id != song.id) continue;
+          if (t.status == TransferStatus.inProgress) {
+            active = true;
+            break;
+          }
+          if (t.status == TransferStatus.queued) queued = true;
+        }
+        return (active, !active && queued);
       }),
     );
     final device = ref.watch(selectedDeviceProvider);

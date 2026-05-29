@@ -340,12 +340,24 @@ class _AlbumCard extends ConsumerWidget {
     final albumSync = settings != null
         ? albumSyncOnDevice(album.artist, album.name, album.year, album.songCount, settings)
         : AlbumSyncStatus.absent;
-    final queue = ref.watch(transferQueueProvider);
-    final isActive = queue.any((t) =>
-        t.song.albumId == album.id && t.status == TransferStatus.inProgress);
-    final isQueued = !isActive &&
-        queue.any((t) =>
-            t.song.albumId == album.id && t.status == TransferStatus.queued);
+    // Watch only this album's transfer status. Without .select() every status
+    // change anywhere in the queue rebuilds every visible album card (and
+    // re-runs albumSyncOnDevice on each).
+    final (isActive, isQueued) = ref.watch(
+      transferQueueProvider.select((q) {
+        var active = false;
+        var queued = false;
+        for (final t in q) {
+          if (t.song.albumId != album.id) continue;
+          if (t.status == TransferStatus.inProgress) {
+            active = true;
+            break;
+          }
+          if (t.status == TransferStatus.queued) queued = true;
+        }
+        return (active, !active && queued);
+      }),
+    );
     final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
 
     return GestureDetector(

@@ -46,8 +46,8 @@ class _NowPlaying extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pb = ref.watch(playbackProvider);
     final song = pb.currentSong;
-    final isStarred =
-        song != null && ref.watch(starredProvider).contains(song.id);
+    final isStarred = song != null &&
+        ref.watch(starredProvider.select((s) => s.contains(song.id)));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),

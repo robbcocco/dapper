@@ -725,10 +725,17 @@ class _AlbumSection extends ConsumerWidget {
     // would re-run albumSyncOnDevice (file I/O) for every visible album section.
     final (isAlbumActive, isAlbumQueued) = ref.watch(
       transferQueueProvider.select((q) {
-        final active = q.any((t) =>
-            t.song.albumId == album.id && t.status == TransferStatus.inProgress);
-        return (active, !active && q.any((t) =>
-            t.song.albumId == album.id && t.status == TransferStatus.queued));
+        var active = false;
+        var queued = false;
+        for (final t in q) {
+          if (t.song.albumId != album.id) continue;
+          if (t.status == TransferStatus.inProgress) {
+            active = true;
+            break;
+          }
+          if (t.status == TransferStatus.queued) queued = true;
+        }
+        return (active, !active && queued);
       }),
     );
     final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
@@ -967,10 +974,17 @@ class _AlbumSongStatusRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final (isActive, isQueued) = ref.watch(
       transferQueueProvider.select((q) {
-        final active = q.any((t) =>
-            t.song.id == song.id && t.status == TransferStatus.inProgress);
-        return (active, !active && q.any((t) =>
-            t.song.id == song.id && t.status == TransferStatus.queued));
+        var active = false;
+        var queued = false;
+        for (final t in q) {
+          if (t.song.id != song.id) continue;
+          if (t.status == TransferStatus.inProgress) {
+            active = true;
+            break;
+          }
+          if (t.status == TransferStatus.queued) queued = true;
+        }
+        return (active, !active && queued);
       }),
     );
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);

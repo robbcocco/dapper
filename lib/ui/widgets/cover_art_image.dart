@@ -27,11 +27,20 @@ class CoverArtImage extends ConsumerWidget {
     final serverId = ref.watch(selectedServerProvider)?.id ?? '';
     final uri = repo.coverArtUri(coverArtId!, size: size);
 
+    // Decode the bitmap at display resolution × devicePixelRatio. Without
+    // this, every card decodes the full server image (often 600-2000px) into
+    // an RGBA bitmap even when displayed at 60-180px — 100+ album cards
+    // visible at once eats hundreds of MB of memory and burns decode CPU.
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cacheDim = (size * dpr).round();
+
     return ClipRRect(
       borderRadius: BorderRadius.circular(borderRadius),
       child: CachedNetworkImage(
         imageUrl: uri.toString(),
         cacheKey: 'ca_${serverId}_${coverArtId}_$size',
+        memCacheWidth: cacheDim,
+        memCacheHeight: cacheDim,
         fit: BoxFit.cover,
         fadeInDuration: Duration.zero,
         fadeOutDuration: Duration.zero,

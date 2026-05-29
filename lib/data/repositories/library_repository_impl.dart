@@ -15,6 +15,15 @@ class LibraryRepositoryImpl implements LibraryRepository {
 
   final SubsonicApi _api;
 
+  // Session-scope LRU for getAlbum. Most callers go through albumProvider
+  // (a Riverpod FutureProvider.family) which already memoises, but a few
+  // direct callers — playArtist iterating an artist's albums in particular —
+  // bypass Riverpod and would otherwise re-fetch on every invocation. Cache
+  // dies with this repository instance, which is replaced on credential
+  // change, so we never serve cross-server data.
+  static const _albumCacheCap = 50;
+  final Map<String, Album> _albumCache = {};
+
   @override
   Future<List<Artist>> getArtists() async {
     final dtos = await _api.getArtists();
@@ -29,8 +38,19 @@ class LibraryRepositoryImpl implements LibraryRepository {
 
   @override
   Future<Album> getAlbum(String albumId) async {
+    // LRU promote-on-read using Dart's LinkedHashMap insertion-order semantics.
+    final cached = _albumCache.remove(albumId);
+    if (cached != null) {
+      _albumCache[albumId] = cached;
+      return cached;
+    }
     final dto = await _api.getAlbum(albumId);
-    return _mapAlbum(dto);
+    final album = _mapAlbum(dto);
+    if (_albumCache.length >= _albumCacheCap) {
+      _albumCache.remove(_albumCache.keys.first);
+    }
+    _albumCache[albumId] = album;
+    return album;
   }
 
   @override
