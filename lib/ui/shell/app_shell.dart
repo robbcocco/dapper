@@ -15,6 +15,7 @@ import '../pages/lidarr/lidarr_page.dart';
 import '../pages/playlists/playlists_page.dart';
 import '../pages/search/search_page.dart';
 import '../pages/settings/settings_page.dart';
+import '../pages/setup/setup_page.dart';
 import '../pages/songs/songs_page.dart';
 import 'bottom_bar/bottom_bar_widget.dart';
 import 'sidebar/sidebar_widget.dart';
@@ -63,7 +64,7 @@ class AppShell extends ConsumerWidget {
     if (creds.valueOrNull == null) {
       return const Scaffold(
         backgroundColor: ColorTokens.background,
-        body: SettingsPage(),
+        body: SetupPage(),
       );
     }
 

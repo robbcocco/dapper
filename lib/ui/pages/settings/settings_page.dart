@@ -1,5 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path/path.dart' as p;
 
 import '../../../application/lidarr/lidarr_notifier.dart';
 import '../../../application/providers/providers.dart';
@@ -122,8 +126,100 @@ class _GeneralTab extends ConsumerWidget {
             ),
           ),
         ),
+        const SizedBox(height: 40),
+        const Divider(color: ColorTokens.glassBorder),
+        const SizedBox(height: 20),
+        const Text(
+          'Reset',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: ColorTokens.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Clears all servers, credentials, device settings, and app data. '
+          'The app will return to the setup screen.',
+          style: TextStyle(fontSize: 11, color: ColorTokens.textSecondary),
+        ),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton(
+            onPressed: () => _confirmReset(context, ref),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.redAccent,
+              side: const BorderSide(color: Colors.redAccent),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text('Reset all data', style: TextStyle(fontSize: 13)),
+          ),
+        ),
       ],
     );
+  }
+
+  Future<void> _confirmReset(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: ColorTokens.surface,
+        title: const Text('Reset all data',
+            style: TextStyle(color: ColorTokens.textPrimary, fontSize: 16)),
+        content: const Text(
+          'This will remove all servers, credentials, device settings, '
+          'and cached data. The app will return to the setup screen.\n\n'
+          'This cannot be undone.',
+          style: TextStyle(fontSize: 13, color: ColorTokens.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel',
+                style: TextStyle(color: ColorTokens.textSecondary)),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('Reset'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final supportDir = ref.read(appSupportDirProvider);
+
+    // Close and wipe the database.
+    await ref.read(appDatabaseProvider).close();
+    ref.invalidate(appDatabaseProvider);
+    _tryDelete(p.join(supportDir, 'dapper.db'));
+    _tryDelete(p.join(supportDir, 'dapper.db-shm'));
+    _tryDelete(p.join(supportDir, 'dapper.db-wal'));
+
+    // Wipe persisted JSON files.
+    _tryDelete(p.join(supportDir, 'app_settings.json'));
+    _tryDelete(p.join(supportDir, 'transfer_queue.json'));
+
+    // Wipe all keychain entries (server passwords, selected IDs).
+    await const FlutterSecureStorage().deleteAll();
+
+    // Invalidate in-memory provider state so everything reloads from scratch.
+    ref.invalidate(serversProvider);
+    ref.invalidate(selectedServerIdProvider);
+    ref.invalidate(lidarrInstancesProvider);
+    ref.invalidate(selectedLidarrInstanceIdProvider);
+    ref.invalidate(appSettingsProvider);
+    ref.invalidate(allStoredDeviceSettingsProvider);
+    // serverCredentialsProvider will become null → AppShell shows SetupPage.
+  }
+
+  void _tryDelete(String path) {
+    try {
+      final f = File(path);
+      if (f.existsSync()) f.deleteSync();
+    } catch (_) {}
   }
 }
 
