@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../application/lidarr/lidarr_notifier.dart';
 import '../../../application/providers/providers.dart';
-import '../../../application/settings/app_settings_notifier.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/device_settings.dart';

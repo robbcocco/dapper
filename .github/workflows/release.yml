@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ~/Library/Caches/CocoaPods
+            macos/Pods
+          key: ${{ runner.os }}-flutter-${{ hashFiles('pubspec.lock', 'macos/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-flutter-
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build macOS
+        run: flutter build macos --release
+        env:
+          FLUTTER_XCODE_CODE_SIGNING_ALLOWED: NO
+          FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
+          FLUTTER_XCODE_CODE_SIGNING_REQUIRED: NO
+
+      - name: Resolve version and tag
+        id: meta
+        run: |
+          SEMVER=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d'+' -f1)
+          TAG="v${SEMVER}-build.${{ github.run_number }}"
+          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Package .app
+        run: |
+          APP=$(find build/macos/Build/Products/Release -name "*.app" -maxdepth 1 | head -1)
+          cd build/macos/Build/Products/Release
+          zip -r "$GITHUB_WORKSPACE/dapper-macos.zip" "$(basename "$APP")"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: Dapper ${{ steps.meta.outputs.semver }} (build ${{ github.run_number }})
+          generate_release_notes: true
+          files: dapper-macos.zip

@@ -1,0 +1,47 @@
+name: Build
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            ~/Library/Caches/CocoaPods
+            macos/Pods
+          key: ${{ runner.os }}-flutter-${{ hashFiles('pubspec.lock', 'macos/Podfile.lock') }}
+          restore-keys: ${{ runner.os }}-flutter-
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
+      - name: Build macOS
+        run: flutter build macos --release
+        env:
+          FLUTTER_XCODE_CODE_SIGNING_ALLOWED: NO
+          FLUTTER_XCODE_CODE_SIGN_IDENTITY: ""
+          FLUTTER_XCODE_CODE_SIGNING_REQUIRED: NO
