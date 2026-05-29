@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -285,7 +286,7 @@ class _ServerSwitcherHeader extends ConsumerWidget {
     );
 
     if (result != null && result != active?.id) {
-      ref.read(selectedServerIdProvider.notifier).select(result);
+      unawaited(ref.read(selectedServerIdProvider.notifier).select(result));
     }
   }
 }
@@ -381,7 +382,9 @@ class _PlaylistsSectionHeader extends ConsumerWidget {
       ),
     );
     if (name != null && name.trim().isNotEmpty) {
-      ref.read(playlistActionsProvider.notifier).createPlaylist(name.trim());
+      unawaited(ref
+          .read(playlistActionsProvider.notifier)
+          .createPlaylist(name.trim()));
     }
   }
 }

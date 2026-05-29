@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -129,9 +131,9 @@ class _PlaylistList extends ConsumerWidget {
       builder: (_) => _RenameDialog(controller: ctrl),
     );
     if (name != null && name.trim().isNotEmpty) {
-      ref
+      unawaited(ref
           .read(playlistActionsProvider.notifier)
-          .rename(playlist.id, name.trim());
+          .rename(playlist.id, name.trim()));
     }
   }
 
@@ -159,7 +161,7 @@ class _PlaylistList extends ConsumerWidget {
       ),
     );
     if (confirmed == true) {
-      ref.read(playlistActionsProvider.notifier).delete(playlist.id);
+      unawaited(ref.read(playlistActionsProvider.notifier).delete(playlist.id));
     }
   }
 }

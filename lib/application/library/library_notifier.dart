@@ -70,66 +70,84 @@ class AllAlbumsState {
 class AllAlbumsNotifier extends Notifier<AllAlbumsState> {
   static const _pageSize = 100;
 
+  // Bumped whenever build() runs (server switch) or refresh() starts. In-flight
+  // fetches compare against this and bail before writing stale results.
+  int _loadEpoch = 0;
+
   @override
   AllAlbumsState build() {
     ref.watch(libraryRepositoryProvider); // reset when active server changes
-    _loadInitial();
+    final epoch = ++_loadEpoch;
+    _loadInitial(epoch);
     return const AllAlbumsState(isLoading: true);
   }
 
-  Future<void> _loadInitial() async {
+  Future<void> _loadInitial(int epoch) async {
     try {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) {
+        if (epoch != _loadEpoch) return;
         state = const AllAlbumsState();
         return;
       }
       final all = <Album>[];
       while (true) {
+        if (epoch != _loadEpoch) return;
         final batch =
             await repo.getAllAlbums(size: _pageSize, offset: all.length);
+        if (epoch != _loadEpoch) return;
         all.addAll(batch);
         if (batch.length < _pageSize) break;
       }
+      if (epoch != _loadEpoch) return;
       state = AllAlbumsState(albums: all, isLoading: false, hasMore: false);
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       state = AllAlbumsState(isLoading: false, error: e);
     }
   }
 
   Future<void> refresh() async {
     if (state.isLoading) return;
+    final epoch = ++_loadEpoch;
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) return;
       final all = <Album>[];
       while (true) {
+        if (epoch != _loadEpoch) return;
         final batch =
             await repo.getAllAlbums(size: _pageSize, offset: all.length);
+        if (epoch != _loadEpoch) return;
         all.addAll(batch);
         if (batch.length < _pageSize) break;
       }
+      if (epoch != _loadEpoch) return;
       state = AllAlbumsState(albums: all, isLoading: false, hasMore: false);
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       state = state.copyWith(isLoading: false, error: e);
     }
   }
 
   Future<void> loadMore() async {
     if (!state.hasMore || state.isLoading) return;
+    final epoch = _loadEpoch;
     state = state.copyWith(isLoading: true);
     try {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) return;
       final more = await repo.getAllAlbums(
           size: _pageSize, offset: state.albums.length);
+      if (epoch != _loadEpoch) return;
       state = AllAlbumsState(
         albums: [...state.albums, ...more],
         isLoading: false,
         hasMore: more.length == _pageSize,
       );
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       state = state.copyWith(isLoading: false, error: e);
     }
   }
@@ -171,62 +189,74 @@ class AllSongsState {
 class AllSongsNotifier extends Notifier<AllSongsState> {
   static const _pageSize = 100;
 
+  int _loadEpoch = 0;
+
   @override
   AllSongsState build() {
     ref.watch(libraryRepositoryProvider); // reset when active server changes
-    _loadInitial();
+    final epoch = ++_loadEpoch;
+    _loadInitial(epoch);
     return const AllSongsState(isLoading: true);
   }
 
-  Future<void> _loadInitial() async {
+  Future<void> _loadInitial(int epoch) async {
     try {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) {
+        if (epoch != _loadEpoch) return;
         state = const AllSongsState();
         return;
       }
       final songs = await repo.getAllSongs(count: _pageSize, offset: 0);
+      if (epoch != _loadEpoch) return;
       state = AllSongsState(
         songs: songs,
         isLoading: false,
         hasMore: songs.length == _pageSize,
       );
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       state = AllSongsState(isLoading: false, error: e);
     }
   }
 
   Future<void> refresh() async {
     if (state.isLoading) return;
+    final epoch = ++_loadEpoch;
     state = state.copyWith(isLoading: true, clearError: true);
     try {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) return;
       final songs = await repo.getAllSongs(count: _pageSize, offset: 0);
+      if (epoch != _loadEpoch) return;
       state = AllSongsState(
         songs: songs,
         isLoading: false,
         hasMore: songs.length == _pageSize,
       );
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       state = state.copyWith(isLoading: false, error: e);
     }
   }
 
   Future<void> loadMore() async {
     if (!state.hasMore || state.isLoading) return;
+    final epoch = _loadEpoch;
     state = state.copyWith(isLoading: true);
     try {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) return;
       final more =
           await repo.getAllSongs(count: _pageSize, offset: state.songs.length);
+      if (epoch != _loadEpoch) return;
       state = AllSongsState(
         songs: [...state.songs, ...more],
         isLoading: false,
         hasMore: more.length == _pageSize,
       );
     } catch (e) {
+      if (epoch != _loadEpoch) return;
       state = state.copyWith(isLoading: false, error: e);
     }
   }

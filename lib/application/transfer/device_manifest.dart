@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -36,9 +37,22 @@ Future<void> removeMacOSSidecar(String filePath) async {
   if (await sidecar.exists()) {
     try {
       await sidecar.delete();
-    } catch (_) {}
+    } catch (e) {
+      dev.log('removeMacOSSidecar: could not delete ${sidecar.path} — $e');
+    }
   }
-  await Process.run('xattr', ['-c', filePath]);
+  try {
+    final result = await Process.run('xattr', ['-c', filePath]);
+    if (result.exitCode != 0) {
+      // Common on read-only volumes; without this the OS will recreate the
+      // sidecar next time the file is read.
+      dev.log(
+          'removeMacOSSidecar: xattr -c $filePath exited ${result.exitCode}: '
+          '${result.stderr}');
+    }
+  } catch (e) {
+    dev.log('removeMacOSSidecar: failed to invoke xattr on $filePath — $e');
+  }
 }
 
 class ManifestSong {
@@ -102,21 +116,84 @@ class AlbumManifest {
       };
 }
 
+// In-memory cache of parsed manifests keyed by absolute folder path. Hit by
+// every song-row and album-card on every transfer-status change; without it
+// the UI thread reads + parses .dapper.json hundreds of times per second
+// during active transfers. Writers (writeManifest / addSongToManifest*) update
+// the cache atomically with disk so reads stay consistent.
+//
+// Cache entry sentinel: a key present with a null value means "we already
+// checked and the file does not exist". This avoids repeated negative-lookup
+// syscalls when many rows ask about an album that's not on the device.
+final _manifestCache = <String, AlbumManifest?>{};
+// Mirror cache for album-folder Directory.existsSync() — same access pattern,
+// same hot path inside albumSyncOnDevice.
+final _folderExistsCache = <String, bool>{};
+
 AlbumManifest? readManifest(String folderPath) {
+  if (_manifestCache.containsKey(folderPath)) {
+    return _manifestCache[folderPath];
+  }
   final file = File(p.join(folderPath, _kManifestFilename));
-  if (!file.existsSync()) return null;
+  if (!file.existsSync()) {
+    _manifestCache[folderPath] = null;
+    return null;
+  }
   try {
-    return AlbumManifest.fromJson(
+    final m = AlbumManifest.fromJson(
         jsonDecode(file.readAsStringSync()) as Map<String, dynamic>);
+    _manifestCache[folderPath] = m;
+    return m;
   } catch (_) {
+    _manifestCache[folderPath] = null;
     return null;
   }
 }
 
+/// Cached `Directory(folderPath).existsSync()`. The cache is invalidated when
+/// we write a manifest into that folder (since a write implies the directory
+/// now exists), and globally on device replug via [clearDeviceCaches].
+bool folderExistsCached(String folderPath) {
+  final cached = _folderExistsCache[folderPath];
+  if (cached != null) return cached;
+  final exists = Directory(folderPath).existsSync();
+  _folderExistsCache[folderPath] = exists;
+  return exists;
+}
+
+/// Clears the in-memory manifest / folder-exists caches. Call this on device
+/// plug-out / change so stale entries from a previous device don't bleed into
+/// the new one (different mount path coincidentally reusing the same root).
+void clearDeviceCaches() {
+  _manifestCache.clear();
+  _folderExistsCache.clear();
+}
+
+// Atomic write: serialise to a sibling .tmp file then rename over the target.
+// `rename` is atomic on a single filesystem (POSIX, NTFS, FAT32) so a crash or
+// unplug between write and rename leaves the previous manifest intact rather
+// than half-written.
 void writeManifest(String folderPath, AlbumManifest manifest) {
-  final file = File(p.join(folderPath, _kManifestFilename));
-  file.writeAsStringSync(
-      const JsonEncoder.withIndent('  ').convert(manifest.toJson()));
+  final target = File(p.join(folderPath, _kManifestFilename));
+  final tmp = File(p.join(folderPath, '$_kManifestFilename.tmp'));
+  tmp.writeAsStringSync(
+      const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+      flush: true);
+  tmp.renameSync(target.path);
+  _manifestCache[folderPath] = manifest;
+  _folderExistsCache[folderPath] = true;
+}
+
+Future<void> _writeManifestAtomic(
+    String folderPath, AlbumManifest manifest) async {
+  final target = File(p.join(folderPath, _kManifestFilename));
+  final tmp = File(p.join(folderPath, '$_kManifestFilename.tmp'));
+  await tmp.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+      flush: true);
+  await tmp.rename(target.path);
+  _manifestCache[folderPath] = manifest;
+  _folderExistsCache[folderPath] = true;
 }
 
 void addSongToManifest(String folderPath, Song song,
@@ -155,10 +232,11 @@ Future<void> addSongToManifestAsync(String folderPath, Song song,
     album: song.album,
     filename: filename,
   ));
-  await file.writeAsString(const JsonEncoder.withIndent('  ').convert(
+  await _writeManifestAtomic(
+    folderPath,
     AlbumManifest(
       songs: songs,
       expectedSongCount: expectedSongCount ?? existing?.expectedSongCount,
-    ).toJson(),
-  ));
+    ),
+  );
 }

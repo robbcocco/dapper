@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -305,9 +307,9 @@ class _SongTableRow extends ConsumerWidget {
     );
     if (!ctx.mounted) return;
     if (result == 'play') {
-      ref
+      unawaited(ref
           .read(playbackProvider.notifier)
-          .playSong(song, queue: allSongs, index: index);
+          .playSong(song, queue: allSongs, index: index));
     } else if (result != null && result.startsWith('transfer:')) {
       final devicePath = result.substring(9);
       final repo = ref.read(libraryRepositoryProvider);
@@ -317,9 +319,9 @@ class _SongTableRow extends ConsumerWidget {
             .enqueue([song], devicePath, repo.downloadUri);
       }
     } else if (result == 'playlist') {
-      showAddToPlaylistDialog(ctx, ref, [song.id]);
+      unawaited(showAddToPlaylistDialog(ctx, ref, [song.id]));
     } else if (result == 'info') {
-      showSongMetadataDialog(ctx, song);
+      unawaited(showSongMetadataDialog(ctx, song));
     }
   }
 

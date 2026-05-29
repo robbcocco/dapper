@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,16 +18,20 @@ class AppSettingsNotifier extends Notifier<AppSettings> {
     return _load(dir);
   }
 
-  void setTransferConcurrency(int value) {
+  Future<void> setTransferConcurrency(int value) async {
     state = state.copyWith(transferConcurrency: value.clamp(1, 4));
-    _save();
+    await _save();
   }
 
-  void _save() {
+  Future<void> _save() async {
     final dir = ref.read(appSupportDirProvider);
-    File(p.join(dir, _kSettingsFile))
-        .writeAsString(jsonEncode(state.toJson()))
-        .ignore();
+    try {
+      await File(p.join(dir, _kSettingsFile))
+          .writeAsString(jsonEncode(state.toJson()));
+    } catch (e, st) {
+      dev.log('AppSettingsNotifier: failed to persist settings — $e',
+          stackTrace: st);
+    }
   }
 
   static AppSettings _load(String dir) {

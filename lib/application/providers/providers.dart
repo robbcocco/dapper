@@ -183,11 +183,13 @@ class _ServerCredentials {
 final subsonicClientProvider = Provider<SubsonicClient?>((ref) {
   final creds = ref.watch(serverCredentialsProvider).valueOrNull;
   if (creds == null) return null;
-  return SubsonicClient(
+  final client = SubsonicClient(
     baseUrl: creds.url,
     username: creds.username,
     password: creds.password,
   );
+  ref.onDispose(client.dispose);
+  return client;
 });
 
 final subsonicApiProvider = Provider<SubsonicApi?>((ref) {
@@ -206,9 +208,11 @@ final libraryRepositoryProvider = Provider<LibraryRepository?>((ref) {
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
-final driveDetectorProvider = Provider<DriveDetector>(
-  (_) => createDriveDetector(),
-);
+final driveDetectorProvider = Provider<DriveDetector>((ref) {
+  final detector = createDriveDetector();
+  ref.onDispose(detector.dispose);
+  return detector;
+});
 
 final connectedDevicesProvider = StreamProvider<List<ConnectedDevice>>((ref) {
   final detector = ref.watch(driveDetectorProvider);

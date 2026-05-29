@@ -1,4 +1,5 @@
 import '../../../core/constants/api_constants.dart';
+import '../../../core/errors/app_exception.dart';
 import '../../datasources/remote/dto/album_dto.dart';
 import '../../datasources/remote/dto/artist_dto.dart';
 import '../../datasources/remote/dto/playlist_dto.dart';
@@ -17,14 +18,15 @@ class SubsonicApi {
 
   Future<List<ArtistDto>> getArtists() async {
     final response = await _client.get(ApiConstants.getArtists);
-    final artists = response['artists'] as Map<String, dynamic>;
-    final indices = artists['index'] as List<dynamic>? ?? [];
+    final artists = response['artists'] as Map<String, dynamic>?;
+    final indices = artists?['index'] as List<dynamic>? ?? const [];
     final result = <ArtistDto>[];
     for (final index in indices) {
-      final entries = (index as Map<String, dynamic>)['artist'] as List<dynamic>? ?? [];
-      result.addAll(
-        entries.map((e) => ArtistDto.fromJson(e as Map<String, dynamic>)),
-      );
+      if (index is! Map<String, dynamic>) continue;
+      final entries = index['artist'] as List<dynamic>? ?? const [];
+      for (final e in entries) {
+        if (e is Map<String, dynamic>) result.add(ArtistDto.fromJson(e));
+      }
     }
     return result;
   }
@@ -34,10 +36,11 @@ class SubsonicApi {
       ApiConstants.getArtist,
       params: {'id': artistId},
     );
-    final artist = response['artist'] as Map<String, dynamic>;
-    final albums = artist['album'] as List<dynamic>? ?? [];
+    final artist = response['artist'] as Map<String, dynamic>?;
+    final albums = artist?['album'] as List<dynamic>? ?? const [];
     return albums
-        .map((e) => AlbumDto.fromJson(e as Map<String, dynamic>))
+        .whereType<Map<String, dynamic>>()
+        .map(AlbumDto.fromJson)
         .toList();
   }
 
@@ -46,7 +49,11 @@ class SubsonicApi {
       ApiConstants.getAlbum,
       params: {'id': albumId},
     );
-    return AlbumDto.fromJson(response['album'] as Map<String, dynamic>);
+    final album = response['album'];
+    if (album is! Map<String, dynamic>) {
+      throw const SubsonicException('Unexpected album payload', code: 0);
+    }
+    return AlbumDto.fromJson(album);
   }
 
   Future<List<AlbumDto>> getRecentAlbums({int size = 20, int offset = 0}) async {
@@ -54,10 +61,11 @@ class SubsonicApi {
       ApiConstants.getAlbumList2,
       params: {'type': 'newest', 'size': size, 'offset': offset},
     );
-    final list = response['albumList2'] as Map<String, dynamic>;
-    final albums = list['album'] as List<dynamic>? ?? [];
+    final list = response['albumList2'] as Map<String, dynamic>?;
+    final albums = list?['album'] as List<dynamic>? ?? const [];
     return albums
-        .map((e) => AlbumDto.fromJson(e as Map<String, dynamic>))
+        .whereType<Map<String, dynamic>>()
+        .map(AlbumDto.fromJson)
         .toList();
   }
 
@@ -66,19 +74,21 @@ class SubsonicApi {
       ApiConstants.getAlbumList2,
       params: {'type': 'alphabeticalByName', 'size': size, 'offset': offset},
     );
-    final list = response['albumList2'] as Map<String, dynamic>;
-    final albums = list['album'] as List<dynamic>? ?? [];
+    final list = response['albumList2'] as Map<String, dynamic>?;
+    final albums = list?['album'] as List<dynamic>? ?? const [];
     return albums
-        .map((e) => AlbumDto.fromJson(e as Map<String, dynamic>))
+        .whereType<Map<String, dynamic>>()
+        .map(AlbumDto.fromJson)
         .toList();
   }
 
   Future<List<PlaylistDto>> getPlaylists() async {
     final response = await _client.get(ApiConstants.getPlaylists);
-    final playlists = response['playlists'] as Map<String, dynamic>;
-    final list = playlists['playlist'] as List<dynamic>? ?? [];
+    final playlists = response['playlists'] as Map<String, dynamic>?;
+    final list = playlists?['playlist'] as List<dynamic>? ?? const [];
     return list
-        .map((e) => PlaylistDto.fromJson(e as Map<String, dynamic>))
+        .whereType<Map<String, dynamic>>()
+        .map(PlaylistDto.fromJson)
         .toList();
   }
 
@@ -87,7 +97,11 @@ class SubsonicApi {
       ApiConstants.getPlaylist,
       params: {'id': playlistId},
     );
-    return PlaylistDto.fromJson(response['playlist'] as Map<String, dynamic>);
+    final playlist = response['playlist'];
+    if (playlist is! Map<String, dynamic>) {
+      throw const SubsonicException('Unexpected playlist payload', code: 0);
+    }
+    return PlaylistDto.fromJson(playlist);
   }
 
   Future<
@@ -105,19 +119,22 @@ class SubsonicApi {
         'songCount': 30,
       },
     );
-    final results = response['searchResult3'] as Map<String, dynamic>;
-    final artistList = results['artist'] as List<dynamic>? ?? [];
-    final albumList = results['album'] as List<dynamic>? ?? [];
-    final songList = results['song'] as List<dynamic>? ?? [];
+    final results = response['searchResult3'] as Map<String, dynamic>?;
+    final artistList = results?['artist'] as List<dynamic>? ?? const [];
+    final albumList = results?['album'] as List<dynamic>? ?? const [];
+    final songList = results?['song'] as List<dynamic>? ?? const [];
     return (
       artists: artistList
-          .map((e) => ArtistDto.fromJson(e as Map<String, dynamic>))
+          .whereType<Map<String, dynamic>>()
+          .map(ArtistDto.fromJson)
           .toList(),
       albums: albumList
-          .map((e) => AlbumDto.fromJson(e as Map<String, dynamic>))
+          .whereType<Map<String, dynamic>>()
+          .map(AlbumDto.fromJson)
           .toList(),
       songs: songList
-          .map((e) => SongDto.fromJson(e as Map<String, dynamic>))
+          .whereType<Map<String, dynamic>>()
+          .map(SongDto.fromJson)
           .toList(),
     );
   }
@@ -132,10 +149,11 @@ class SubsonicApi {
         'songCount': 50,
       },
     );
-    final results = response['searchResult3'] as Map<String, dynamic>;
-    final songs = results['song'] as List<dynamic>? ?? [];
+    final results = response['searchResult3'] as Map<String, dynamic>?;
+    final songs = results?['song'] as List<dynamic>? ?? const [];
     return songs
-        .map((e) => SongDto.fromJson(e as Map<String, dynamic>))
+        .whereType<Map<String, dynamic>>()
+        .map(SongDto.fromJson)
         .toList();
   }
 
@@ -150,9 +168,12 @@ class SubsonicApi {
         'songOffset': offset,
       },
     );
-    final results = response['searchResult3'] as Map<String, dynamic>;
-    final songs = results['song'] as List<dynamic>? ?? [];
-    return songs.map((e) => SongDto.fromJson(e as Map<String, dynamic>)).toList();
+    final results = response['searchResult3'] as Map<String, dynamic>?;
+    final songs = results?['song'] as List<dynamic>? ?? const [];
+    return songs
+        .whereType<Map<String, dynamic>>()
+        .map(SongDto.fromJson)
+        .toList();
   }
 
   // ── Playlist management ───────────────────────────────────────────────────
@@ -162,7 +183,12 @@ class SubsonicApi {
     if (songIds.isNotEmpty) params['songId'] = songIds;
     final response =
         await _client.get(ApiConstants.createPlaylist, params: params);
-    return PlaylistDto.fromJson(response['playlist'] as Map<String, dynamic>);
+    final playlist = response['playlist'];
+    if (playlist is! Map<String, dynamic>) {
+      throw const SubsonicException('createPlaylist returned no playlist',
+          code: 0);
+    }
+    return PlaylistDto.fromJson(playlist);
   }
 
   Future<void> updatePlaylist(
@@ -196,11 +222,16 @@ class SubsonicApi {
 
   Future<Set<String>> getStarredSongIds() async {
     final response = await _client.get(ApiConstants.getStarred2);
-    final starred = response['starred2'] as Map<String, dynamic>? ?? {};
-    final songs = starred['song'] as List<dynamic>? ?? [];
-    return songs
-        .map((e) => (e as Map<String, dynamic>)['id'] as String)
-        .toSet();
+    final starred = response['starred2'] as Map<String, dynamic>?;
+    final songs = starred?['song'] as List<dynamic>? ?? const [];
+    final ids = <String>{};
+    for (final e in songs) {
+      if (e is Map<String, dynamic>) {
+        final id = e['id'];
+        if (id is String) ids.add(id);
+      }
+    }
+    return ids;
   }
 
   Uri coverArtUri(String coverArtId, {int size = 256}) =>

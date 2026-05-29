@@ -78,8 +78,7 @@ AlbumSyncStatus albumSyncOnDevice(
     String? albumArtist, String albumName, int? year, int songCount, DeviceSettings settings) {
   final folder = buildAlbumFolder(albumArtist, albumName, year, settings);
   if (folder == null) return AlbumSyncStatus.absent;
-  final dir = Directory(folder);
-  if (!dir.existsSync()) return AlbumSyncStatus.absent;
+  if (!folderExistsCached(folder)) return AlbumSyncStatus.absent;
 
   final manifest = readManifest(folder);
   if (manifest != null) {
@@ -90,8 +89,13 @@ AlbumSyncStatus albumSyncOnDevice(
     return AlbumSyncStatus.partial;
   }
 
-  final fileCount =
-      dir.listSync().whereType<File>().where(isAudioFile).length;
+  // No manifest: scan the directory. This is the slow path, only hit for
+  // pre-manifest albums or external file-management cases.
+  final fileCount = Directory(folder)
+      .listSync()
+      .whereType<File>()
+      .where(isAudioFile)
+      .length;
   if (fileCount == 0) return AlbumSyncStatus.absent;
   if (songCount > 0 && fileCount >= songCount) return AlbumSyncStatus.full;
   return AlbumSyncStatus.partial;
@@ -102,11 +106,10 @@ bool albumExistsOnDevice(
     String? albumArtist, String albumName, int? year, DeviceSettings settings) {
   final folder = buildAlbumFolder(albumArtist, albumName, year, settings);
   if (folder == null) return false;
-  final dir = Directory(folder);
-  if (!dir.existsSync()) return false;
+  if (!folderExistsCached(folder)) return false;
   final manifest = readManifest(folder);
   if (manifest != null) return manifest.songs.isNotEmpty;
-  return dir.listSync().whereType<File>().any(isAudioFile);
+  return Directory(folder).listSync().whereType<File>().any(isAudioFile);
 }
 
 /// True if the song is present on the device.

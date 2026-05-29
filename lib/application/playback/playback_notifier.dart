@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:developer' as dev;
 import 'dart:math';
 
 import 'package:just_audio/just_audio.dart';
@@ -20,6 +22,7 @@ class PlaybackState {
     this.volume = 1.0,
     this.isShuffled = false,
     this.repeatMode = RepeatMode.none,
+    this.errorMessage,
   });
 
   final Song? currentSong;
@@ -32,6 +35,9 @@ class PlaybackState {
   final double volume;
   final bool isShuffled;
   final RepeatMode repeatMode;
+  /// Last playback error (load / decode / network). Cleared when a new song
+  /// starts loading successfully.
+  final String? errorMessage;
 
   PlaybackState copyWith({
     Song? currentSong,
@@ -45,6 +51,8 @@ class PlaybackState {
     double? volume,
     bool? isShuffled,
     RepeatMode? repeatMode,
+    String? errorMessage,
+    bool clearError = false,
   }) =>
       PlaybackState(
         currentSong: clearSong ? null : (currentSong ?? this.currentSong),
@@ -57,6 +65,7 @@ class PlaybackState {
         volume: volume ?? this.volume,
         isShuffled: isShuffled ?? this.isShuffled,
         repeatMode: repeatMode ?? this.repeatMode,
+        errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),
       );
 
   bool get hasPrevious => currentIndex > 0 || repeatMode == RepeatMode.all;
@@ -67,19 +76,26 @@ class PlaybackState {
 class PlaybackNotifier extends Notifier<PlaybackState> {
   late final AudioPlayer _player;
   List<Song> _originalQueue = [];
+  final _subs = <StreamSubscription<dynamic>>[];
 
   @override
   PlaybackState build() {
     _player = AudioPlayer();
-    ref.onDispose(_player.dispose);
-
-    _player.playerStateStream.listen(_onPlayerState);
-    _player.positionStream.listen(
-      (p) => state = state.copyWith(position: p),
-    );
-    _player.durationStream.listen((d) {
-      if (d != null) state = state.copyWith(duration: d);
+    ref.onDispose(() async {
+      for (final s in _subs) {
+        await s.cancel();
+      }
+      _subs.clear();
+      await _player.dispose();
     });
+
+    _subs.add(_player.playerStateStream.listen(_onPlayerState));
+    _subs.add(_player.positionStream.listen(
+      (p) => state = state.copyWith(position: p),
+    ));
+    _subs.add(_player.durationStream.listen((d) {
+      if (d != null) state = state.copyWith(duration: d);
+    }));
 
     return const PlaybackState();
   }
@@ -115,6 +131,7 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
         position: Duration.zero,
         duration: Duration.zero,
         isShuffled: false,
+        clearError: true,
       );
     } else {
       state = state.copyWith(
@@ -123,14 +140,26 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
         currentIndex: index,
         position: Duration.zero,
         duration: Duration.zero,
+        clearError: true,
       );
     }
     final repo = ref.read(libraryRepositoryProvider);
-    if (repo == null) return;
+    if (repo == null) {
+      state = state.copyWith(
+          isBuffering: false, errorMessage: 'No active server');
+      return;
+    }
     try {
       await _player.setUrl(repo.streamUri(song.id).toString());
-      _player.play();
-    } catch (_) {}
+      unawaited(_player.play());
+    } catch (e) {
+      dev.log('PlaybackNotifier: setUrl failed for ${song.id} — $e');
+      state = state.copyWith(
+        isBuffering: false,
+        isPlaying: false,
+        errorMessage: 'Playback failed: $e',
+      );
+    }
   }
 
   Future<void> togglePlayPause() async {
@@ -209,14 +238,22 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   Future<void> playArtist(String artistId) async {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
-    final albums = await repo.getAlbumsByArtist(artistId);
-    final allSongs = <Song>[];
-    for (final album in albums) {
-      final full = await repo.getAlbum(album.id);
-      allSongs.addAll(full.songs);
+    try {
+      final albums = await repo.getAlbumsByArtist(artistId);
+      final allSongs = <Song>[];
+      for (final album in albums) {
+        final full = await repo.getAlbum(album.id);
+        allSongs.addAll(full.songs);
+      }
+      if (allSongs.isEmpty) return;
+      await playSong(allSongs.first, queue: allSongs, index: 0);
+    } catch (e) {
+      dev.log('PlaybackNotifier: playArtist($artistId) failed — $e');
+      state = state.copyWith(
+        isBuffering: false,
+        errorMessage: 'Could not load artist: $e',
+      );
     }
-    if (allSongs.isEmpty) return;
-    await playSong(allSongs.first, queue: allSongs, index: 0);
   }
 
   Future<void> _playAtIndex(int index) async {

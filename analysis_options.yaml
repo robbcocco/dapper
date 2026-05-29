@@ -17,6 +17,12 @@ analyzer:
 linter:
   rules:
     unnecessary_underscores: false
+    # Catch leaked subscriptions/sinks and ignored futures — the classes of bug
+    # that show up as memory leaks or silently-swallowed errors at runtime.
+    unawaited_futures: true
+    cancel_subscriptions: true
+    close_sinks: true
+    prefer_final_locals: true
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

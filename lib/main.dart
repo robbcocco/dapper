@@ -18,10 +18,11 @@ void main() async {
 
   if (Platform.isMacOS) {
     await WindowManipulator.initialize();
-    WindowManipulator.setWindowBackgroundColorToClear();
-    WindowManipulator.makeTitlebarTransparent();
-    WindowManipulator.enableFullSizeContentView();
-    WindowManipulator.setMaterial(NSVisualEffectViewMaterial.underWindowBackground);
+    await WindowManipulator.setWindowBackgroundColorToClear();
+    await WindowManipulator.makeTitlebarTransparent();
+    await WindowManipulator.enableFullSizeContentView();
+    await WindowManipulator.setMaterial(
+        NSVisualEffectViewMaterial.underWindowBackground);
   }
 
   await windowManager.ensureInitialized();

@@ -910,18 +910,18 @@ class _AlbumSection extends ConsumerWidget {
     if (result == 'info') {
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;
-      AlbumInfoDialog.show(context, full);
+      unawaited(AlbumInfoDialog.show(context, full));
       return;
     }
 
     if (result == 'play') {
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;
-      ref.read(playbackProvider.notifier).playSong(
+      unawaited(ref.read(playbackProvider.notifier).playSong(
             full.songs.first,
             queue: full.songs,
             index: 0,
-          );
+          ));
     } else if (result != null && result.startsWith('transfer:')) {
       final devicePath = result.substring(9);
       final full = await ref.read(albumProvider(album.id).future);
@@ -938,8 +938,8 @@ class _AlbumSection extends ConsumerWidget {
     } else if (result == 'playlist') {
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;
-      showAddToPlaylistDialog(
-          context, ref, full.songs.map((s) => s.id).toList());
+      unawaited(showAddToPlaylistDialog(
+          context, ref, full.songs.map((s) => s.id).toList()));
     }
   }
 }
@@ -1038,7 +1038,7 @@ Future<void> _showArtistMenu(
   if (!context.mounted) return;
 
   if (result == 'play') {
-    ref.read(playbackProvider.notifier).playArtist(artist.id);
+    unawaited(ref.read(playbackProvider.notifier).playArtist(artist.id));
   } else if (result != null && result.startsWith('transfer:')) {
     final devicePath = result.substring(9);
     final repo = ref.read(libraryRepositoryProvider);

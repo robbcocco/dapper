@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
+import '../../domain/models/connected_device.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/song.dart';
 import '../../domain/models/transfer_task.dart';
@@ -47,6 +49,14 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
             : t)
         .toList();
 
+    ref.onDispose(() {
+      for (final token in _cancelTokens.values) {
+        if (!token.isCancelled) token.cancel('TransferQueueNotifier disposed');
+      }
+      _cancelTokens.clear();
+      _dio.close(force: true);
+    });
+
     // Only persist when task statuses change, not on every progress-byte tick.
     listenSelf((prev, next) {
       if (prev != null && prev.length == next.length) {
@@ -72,6 +82,13 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       for (final d in devices) {
         _startEngineForDevice(d, repo.downloadUri);
       }
+    });
+
+    // Drop the manifest / folder-exists caches whenever the active device
+    // changes — a different mount could coincidentally reuse the same root
+    // and a stale "exists" entry would mislead the UI.
+    ref.listen<ConnectedDevice?>(selectedDeviceProvider, (prev, next) {
+      if (prev?.path != next?.path) clearDeviceCaches();
     });
 
     return restored;
@@ -195,12 +212,12 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         runningCount++;
         // _executeTask marks next as inProgress synchronously before its first
         // await, so the next loop iteration won't pick the same task again.
-        _executeTask(next, downloadUri).whenComplete(() {
+        unawaited(_executeTask(next, downloadUri).whenComplete(() {
           runningCount--;
           final c = slot;
           slot = null;
           c?.complete();
-        });
+        }));
         continue; // immediately try to fill another slot
       }
 
@@ -311,7 +328,11 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     }
     _pendingPlaylistWrites.remove(groupId);
     final settings = ref.read(deviceSettingsProvider(entry.devicePath));
-    writePlaylistM3u(entry.playlist, settings).catchError((_) {});
+    writePlaylistM3u(entry.playlist, settings).catchError((Object e) {
+      dev.log(
+          'TransferQueueNotifier: M3U write failed for playlist '
+          '"${entry.playlist.name}" on ${entry.devicePath} — $e');
+    });
   }
 
   // Chains async manifest writes per folder so concurrent completions for the

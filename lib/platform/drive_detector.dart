@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
@@ -10,6 +11,9 @@ import '../domain/models/connected_device.dart';
 abstract class DriveDetector {
   Stream<List<ConnectedDevice>> watchDrives();
   Future<List<ConnectedDevice>> listDrives();
+  /// Releases any background resources (timers, broadcast controllers). Safe
+  /// to call multiple times.
+  Future<void> dispose();
 }
 
 DriveDetector createDriveDetector() {
@@ -32,34 +36,73 @@ class MacosDriveDetector implements DriveDetector {
   @override
   Future<List<ConnectedDevice>> listDrives() => watchDrives().first;
 
+  // The underlying EventChannel stream lives for the app's lifetime and has
+  // no owner-side close, so dispose is a no-op.
+  @override
+  Future<void> dispose() async {}
+
   static List<ConnectedDevice> _parseEvent(dynamic event) {
     if (event is! List) return [];
-    return event
-        .whereType<Map>()
-        .map((m) => ConnectedDevice(
-              path: m['path'] as String,
-              label: m['label'] as String? ?? 'USB Device',
-              totalBytes: (m['totalBytes'] as int?) ?? 0,
-              availableBytes: (m['availableBytes'] as int?) ?? 0,
-            ))
-        .toList();
+    final result = <ConnectedDevice>[];
+    for (final entry in event.whereType<Map>()) {
+      final path = entry['path'];
+      if (path is! String || path.isEmpty) continue;
+      result.add(ConnectedDevice(
+        path: path,
+        label: entry['label'] as String? ?? 'USB Device',
+        totalBytes: (entry['totalBytes'] as int?) ?? 0,
+        availableBytes: (entry['availableBytes'] as int?) ?? 0,
+      ));
+    }
+    return result;
   }
 }
 
 class WindowsDriveDetector implements DriveDetector {
   static const _pollInterval = Duration(seconds: 2);
 
+  // Single shared broadcast stream so multiple listeners coalesce onto one
+  // polling timer; the timer stops as soon as the last subscriber leaves.
+  StreamController<List<ConnectedDevice>>? _controller;
+  Timer? _timer;
+  List<ConnectedDevice>? _last;
+
   @override
-  Stream<List<ConnectedDevice>> watchDrives() async* {
-    List<ConnectedDevice>? last;
-    while (true) {
-      final current = _scan();
-      if (last == null || !_sameList(last, current)) {
-        last = current;
-        yield current;
-      }
-      await Future.delayed(_pollInterval);
+  Stream<List<ConnectedDevice>> watchDrives() {
+    // The controller's lifetime spans the detector's; close happens in dispose.
+    // ignore: close_sinks
+    final controller = _controller ??= StreamController.broadcast(
+      onListen: _startPolling,
+      onCancel: _stopPolling,
+    );
+    return controller.stream;
+  }
+
+  void _startPolling() {
+    if (_timer != null) return;
+    _last = null;
+    _emit(); // immediate first scan so listeners don't wait 2s
+    _timer = Timer.periodic(_pollInterval, (_) => _emit());
+  }
+
+  void _stopPolling() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _emit() {
+    final current = _scan();
+    if (_last == null || !_sameList(_last!, current)) {
+      _last = current;
+      _controller?.add(current);
     }
+  }
+
+  @override
+  Future<void> dispose() async {
+    _stopPolling();
+    await _controller?.close();
+    _controller = null;
   }
 
   @override

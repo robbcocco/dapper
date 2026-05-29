@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -410,7 +411,7 @@ class _ServerTile extends ConsumerWidget {
       ),
     );
     if (ok == true) {
-      ref.read(serversProvider.notifier).remove(server.id);
+      unawaited(ref.read(serversProvider.notifier).remove(server.id));
     }
   }
 }
@@ -781,7 +782,8 @@ class _LidarrInstanceTile extends ConsumerWidget {
       ),
     );
     if (ok == true) {
-      ref.read(lidarrInstancesProvider.notifier).remove(instance.id);
+      unawaited(
+          ref.read(lidarrInstancesProvider.notifier).remove(instance.id));
     }
   }
 }

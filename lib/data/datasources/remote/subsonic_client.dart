@@ -1,8 +1,22 @@
 import 'dart:convert';
+import 'dart:math';
+
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import '../../../core/constants/api_constants.dart';
 import '../../../core/errors/app_exception.dart';
+
+// Cryptographically-strong RNG used for the salt suffix. Shared so we don't
+// reseed on every request.
+final _saltRng = Random.secure();
+
+String _generateSalt() {
+  // Millisecond timestamp + 32 random bits, both base-36, so two requests in
+  // the same millisecond can't produce identical salt+token pairs.
+  final ms = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+  final suffix = _saltRng.nextInt(1 << 32).toRadixString(36);
+  return '$ms$suffix';
+}
 
 class SubsonicClient {
   SubsonicClient({
@@ -12,7 +26,11 @@ class SubsonicClient {
   }) : _baseUrl = baseUrl,
        _username = username,
        _password = password {
-    _dio = Dio(BaseOptions(baseUrl: baseUrl))
+    _dio = Dio(BaseOptions(
+      baseUrl: baseUrl,
+      connectTimeout: const Duration(seconds: 10),
+      receiveTimeout: const Duration(seconds: 30),
+    ))
       ..interceptors.add(_AuthInterceptor(username, password))
       ..interceptors.add(_SubsonicErrorInterceptor());
   }
@@ -35,10 +53,19 @@ class SubsonicClient {
     return response.data!['subsonic-response'] as Map<String, dynamic>;
   }
 
+  /// Closes the underlying Dio instance. Called by the provider when this
+  /// client is replaced (server switch / sign-out) so in-flight requests are
+  /// cancelled and the HTTP connection pool is released.
+  void dispose() {
+    _dio.close(force: true);
+  }
+
   /// Builds a URL for endpoints that are consumed directly (stream, coverArt).
   Uri buildUri(String path, Map<String, dynamic> extraParams) {
     final salt = _generateSalt();
     final token = _md5Hash('$_password$salt');
+    // Note: each buildUri call gets its own salt so multiple cover-art / stream
+    // URIs generated in the same millisecond don't collide.
     final params = {
       'u': _username,
       't': token,
@@ -54,9 +81,6 @@ class SubsonicClient {
     );
   }
 
-  static String _generateSalt() =>
-      DateTime.now().millisecondsSinceEpoch.toRadixString(36);
-
   static String _md5Hash(String input) =>
       md5.convert(utf8.encode(input)).toString();
 }
@@ -69,7 +93,7 @@ class _AuthInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final salt = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    final salt = _generateSalt();
     final token = md5
         .convert(utf8.encode('$_password$salt'))
         .toString();

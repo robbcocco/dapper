@@ -19,9 +19,24 @@ class NavidromeClient {
   late final Dio _dio;
   String? _token;
   String? _cookieHeader;
+  // Gates concurrent first-call logins so two parallel requests don't both
+  // POST /auth/login and clobber each other's _token / _cookieHeader.
+  Future<void>? _loginInFlight;
 
   Future<void> _ensureToken() async {
     if (_token != null) return;
+    final existing = _loginInFlight;
+    if (existing != null) return existing;
+    final pending = _login();
+    _loginInFlight = pending;
+    try {
+      await pending;
+    } finally {
+      if (identical(_loginInFlight, pending)) _loginInFlight = null;
+    }
+  }
+
+  Future<void> _login() async {
     dev.log('NavidromeClient: logging in as $username at $baseUrl/auth/login');
     try {
       final res = await _dio.post<Map<String, dynamic>>(
@@ -31,22 +46,26 @@ class NavidromeClient {
       );
       dev.log('NavidromeClient: login ${res.statusCode}, data: ${res.data}');
 
-      _token = (res.data?['token'] as String?)?.trim();
-      if (_token == null || _token!.isEmpty) {
+      final token = (res.data?['token'] as String?)?.trim();
+      if (token == null || token.isEmpty) {
         throw Exception(
             'Login returned ${res.statusCode} but response had no token. '
             'Body: ${res.data}');
       }
 
       // Capture session cookie — some Navidrome versions validate via cookie.
+      String? cookieHeader;
       final cookies = res.headers['set-cookie'];
       if (cookies != null && cookies.isNotEmpty) {
-        _cookieHeader =
+        cookieHeader =
             cookies.map((c) => c.split(';').first.trim()).join('; ');
-        dev.log('NavidromeClient: captured cookies: $_cookieHeader');
+        dev.log('NavidromeClient: captured cookies: $cookieHeader');
       }
 
-      dev.log('NavidromeClient: token obtained (${_token!.length} chars)');
+      // Publish token + cookie together so callers never see a half-updated pair.
+      _token = token;
+      _cookieHeader = cookieHeader;
+      dev.log('NavidromeClient: token obtained (${token.length} chars)');
     } on DioException catch (e) {
       final body = e.response?.data;
       throw Exception(

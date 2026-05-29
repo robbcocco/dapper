@@ -1,3 +1,4 @@
+import 'dart:developer' as dev;
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -48,7 +49,8 @@ class MusicBrainzClient {
       return groups
           .map((e) => MbReleaseGroup.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (_) {
+    } catch (e) {
+      dev.log('MusicBrainzClient: release-group query failed — $e');
       return [];
     }
   }
@@ -65,7 +67,8 @@ class MusicBrainzClient {
       );
       if (resp.data == null) return null;
       return Uint8List.fromList(resp.data!);
-    } catch (_) {
+    } catch (e) {
+      dev.log('MusicBrainzClient: cover-art fetch for $mbid failed — $e');
       return null;
     }
   }

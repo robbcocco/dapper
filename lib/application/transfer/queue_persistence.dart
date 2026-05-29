@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -14,12 +15,14 @@ List<TransferTask> loadQueue(String supportDir) {
   try {
     final list = jsonDecode(file.readAsStringSync()) as List;
     return list.whereType<Map<String, dynamic>>().map(_taskFromJson).toList();
-  } catch (_) {
+  } catch (e, st) {
+    dev.log('queue_persistence: failed to parse $_kQueueFile — $e',
+        stackTrace: st);
     return [];
   }
 }
 
-void saveQueue(String supportDir, List<TransferTask> tasks) {
+Future<void> saveQueue(String supportDir, List<TransferTask> tasks) async {
   final toSave = tasks
       .where((t) =>
           t.status == TransferStatus.queued ||
@@ -27,7 +30,12 @@ void saveQueue(String supportDir, List<TransferTask> tasks) {
           t.status == TransferStatus.failed)
       .toList();
   final file = File(p.join(supportDir, _kQueueFile));
-  file.writeAsString(jsonEncode(toSave.map(_taskToJson).toList())).ignore();
+  try {
+    await file.writeAsString(jsonEncode(toSave.map(_taskToJson).toList()));
+  } catch (e, st) {
+    dev.log('queue_persistence: failed to write $_kQueueFile — $e',
+        stackTrace: st);
+  }
 }
 
 Map<String, dynamic> _taskToJson(TransferTask t) => {

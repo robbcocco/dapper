@@ -295,7 +295,7 @@ class LidarrFilterCondition {
   factory LidarrFilterCondition.fromJson(Map<String, dynamic> json) {
     final raw = json['value'];
     final values = switch (raw) {
-      List list => list.map((e) => e.toString()).toList(),
+      final List list => list.map((e) => e.toString()).toList(),
       null => <String>[],
       _ => [raw.toString()],
     };

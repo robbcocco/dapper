@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -465,7 +467,7 @@ class _AlbumCard extends ConsumerWidget {
     if (result == 'info') {
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;
-      AlbumInfoDialog.show(context, full);
+      unawaited(AlbumInfoDialog.show(context, full));
       return;
     }
 
@@ -484,8 +486,8 @@ class _AlbumCard extends ConsumerWidget {
     } else if (result == 'playlist') {
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;
-      showAddToPlaylistDialog(
-          context, ref, full.songs.map((s) => s.id).toList());
+      unawaited(showAddToPlaylistDialog(
+          context, ref, full.songs.map((s) => s.id).toList()));
     }
   }
 }

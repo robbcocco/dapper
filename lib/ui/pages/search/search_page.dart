@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -239,7 +241,7 @@ Future<void> _showSearchArtistMenu(
     ref.read(selectedSectionProvider.notifier).state = SidebarSection.artists;
     ref.read(searchQueryProvider.notifier).state = '';
   } else if (result == 'play') {
-    ref.read(playbackProvider.notifier).playArtist(artist.id);
+    unawaited(ref.read(playbackProvider.notifier).playArtist(artist.id));
   }
 }
 
@@ -285,11 +287,11 @@ Future<void> _showSearchAlbumMenu(
   } else if (result == 'play') {
     final full = await ref.read(albumProvider(album.id).future);
     if (full == null || full.songs.isEmpty || !context.mounted) return;
-    ref.read(playbackProvider.notifier).playSong(
+    unawaited(ref.read(playbackProvider.notifier).playSong(
           full.songs.first,
           queue: full.songs,
           index: 0,
-        );
+        ));
   } else if (result != null && result.startsWith('transfer:')) {
     final devicePath = result.substring(9);
     final full = await ref.read(albumProvider(album.id).future);
