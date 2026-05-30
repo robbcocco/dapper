@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../application/lidarr/lidarr_notifier.dart';
@@ -203,8 +202,10 @@ class _GeneralTab extends ConsumerWidget {
     _tryDelete(p.join(supportDir, 'app_settings.json'));
     _tryDelete(p.join(supportDir, 'transfer_queue.json'));
 
-    // Wipe all keychain entries (server passwords, selected IDs).
-    await const FlutterSecureStorage().deleteAll();
+    // Wipe all stored credentials (server passwords + selected IDs). Goes
+    // through the fallback store so both keychain and file backends are
+    // cleared in one shot.
+    await ref.read(secureStorageProvider).deleteAll();
 
     // Invalidate in-memory provider state so everything reloads from scratch.
     ref.invalidate(serversProvider);

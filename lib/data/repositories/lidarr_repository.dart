@@ -1,12 +1,11 @@
 import 'dart:convert';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
 import '../../domain/models/lidarr_instance.dart';
+import '../datasources/local/credential_store.dart';
 
 class LidarrRepository {
   const LidarrRepository(this._storage);
-  final FlutterSecureStorage _storage;
+  final CredentialStore _storage;
 
   static const _instancesKey = 'lidarr_instances';
   static const _selectedIdKey = 'lidarr_selected_instance_id';

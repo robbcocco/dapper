@@ -1,8 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/database/app_database.dart';
+import '../../data/datasources/local/credential_store.dart';
 import '../../data/datasources/remote/lidarr_client.dart';
 import '../../data/datasources/remote/subsonic_api.dart';
 import '../../data/datasources/remote/subsonic_client.dart';
@@ -34,9 +34,15 @@ final appDatabaseProvider = Provider<AppDatabase>((_) => AppDatabase());
 
 // ── Secure storage ────────────────────────────────────────────────────────────
 
-final secureStorageProvider = Provider<FlutterSecureStorage>(
-  (_) => const FlutterSecureStorage(),
-);
+// Returns a Keychain → file fallback store. The macOS Keychain can return
+// errSecMissingEntitlement (-34018) depending on signing / translocation state
+// even when the entitlement is declared; the fallback persists credentials to
+// a 600-mode JSON file in the app support directory so the app never blocks
+// on saving the server.
+final secureStorageProvider = Provider<CredentialStore>((ref) {
+  final supportDir = ref.watch(appSupportDirProvider);
+  return buildDefaultCredentialStore(supportDir);
+});
 
 // ── Server repository ─────────────────────────────────────────────────────────
 

@@ -1,13 +1,12 @@
 import 'dart:convert';
 
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
 import '../../domain/models/navidrome_server.dart';
+import '../datasources/local/credential_store.dart';
 
 class ServerRepository {
   const ServerRepository(this._storage);
 
-  final FlutterSecureStorage _storage;
+  final CredentialStore _storage;
 
   static const _serversKey = 'navidrome_servers';
   static const _selectedKey = 'selected_server_id';
