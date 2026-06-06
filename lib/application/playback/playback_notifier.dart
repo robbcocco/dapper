@@ -6,7 +6,9 @@ import 'package:just_audio/just_audio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/song.dart';
+import '../../domain/repositories/library_repository.dart';
 import '../providers/providers.dart';
+import 'scrobble_rule.dart';
 
 enum RepeatMode { none, one, all }
 
@@ -77,6 +79,11 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   late final AudioPlayer _player;
   List<Song> _originalQueue = [];
   final _subs = <StreamSubscription<dynamic>>[];
+  // ID of the song we last fired a full scrobble for, and whether *this*
+  // playback session has already been scrobbled. Reset when a new track
+  // starts or when RepeatMode.one replays the same track from the top.
+  String? _scrobbledSongId;
+  bool _scrobbledThisPlayback = false;
 
   @override
   PlaybackState build() {
@@ -90,14 +97,45 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     });
 
     _subs.add(_player.playerStateStream.listen(_onPlayerState));
-    _subs.add(_player.positionStream.listen(
-      (p) => state = state.copyWith(position: p),
-    ));
+    _subs.add(_player.positionStream.listen((p) {
+      state = state.copyWith(position: p);
+      _maybeScrobble(p, state.duration, state.currentSong);
+    }));
     _subs.add(_player.durationStream.listen((d) {
       if (d != null) state = state.copyWith(duration: d);
     }));
 
     return const PlaybackState();
+  }
+
+  // Sends the full scrobble exactly once per playback session, the first
+  // time the position passes the listen threshold. The "now playing" ping
+  // is sent separately in playSong() when the track starts.
+  void _maybeScrobble(Duration position, Duration duration, Song? song) {
+    if (song == null) return;
+    if (_scrobbledThisPlayback && _scrobbledSongId == song.id) return;
+    if (!shouldScrobble(position: position, duration: duration)) return;
+    _scrobbledThisPlayback = true;
+    _scrobbledSongId = song.id;
+    final repo = ref.read(libraryRepositoryProvider);
+    if (repo == null) return;
+    unawaited(_scrobbleSafely(repo, song.id, submission: true));
+  }
+
+  Future<void> _scrobbleSafely(
+    LibraryRepository repo,
+    String songId, {
+    required bool submission,
+  }) async {
+    try {
+      await repo.scrobble(songId, submission: submission);
+    } catch (e) {
+      // Scrobbling is a best-effort side-channel; never let it disrupt
+      // playback. Log so we can spot misbehaving servers in the console.
+      dev.log(
+          'PlaybackNotifier: scrobble(${submission ? "true" : "false"}) for '
+          '$songId failed — $e');
+    }
   }
 
   void _onPlayerState(PlayerState ps) {
@@ -108,6 +146,15 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     );
     if (ps.processingState == ProcessingState.completed) {
       if (state.repeatMode == RepeatMode.one) {
+        // Repeat-one: each loop is a fresh playback in Last.fm terms, so
+        // reset the scrobble flag and re-send the "now playing" ping.
+        _scrobbledThisPlayback = false;
+        _scrobbledSongId = null;
+        final song = state.currentSong;
+        final repo = ref.read(libraryRepositoryProvider);
+        if (song != null && repo != null) {
+          unawaited(_scrobbleSafely(repo, song.id, submission: false));
+        }
         _player.seek(Duration.zero);
         _player.play();
       } else if (state.currentIndex < state.queue.length - 1) {
@@ -149,9 +196,16 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
           isBuffering: false, errorMessage: 'No active server');
       return;
     }
+    // New playback session — reset scrobble state so the full scrobble can
+    // fire again once we cross the threshold for this listen.
+    _scrobbledThisPlayback = false;
+    _scrobbledSongId = null;
     try {
       await _player.setUrl(repo.streamUri(song.id).toString());
       unawaited(_player.play());
+      // "Now playing" ping fires only after we know the player accepted the
+      // URL — avoids spamming the server with pings for failed loads.
+      unawaited(_scrobbleSafely(repo, song.id, submission: false));
     } catch (e) {
       dev.log('PlaybackNotifier: setUrl failed for ${song.id} — $e');
       state = state.copyWith(

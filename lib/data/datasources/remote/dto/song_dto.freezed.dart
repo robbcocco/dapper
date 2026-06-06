@@ -42,7 +42,9 @@ mixin _$SongDto {
   int? get year => throw _privateConstructorUsedError;
   String? get genre => throw _privateConstructorUsedError;
   @JsonKey(name: 'albumArtist')
-  String? get albumArtist => throw _privateConstructorUsedError;
+  String? get albumArtist => throw _privateConstructorUsedError; // Subsonic `userRating` (1-5) — present only when the user has rated.
+  @JsonKey(name: 'userRating')
+  int? get userRating => throw _privateConstructorUsedError;
 
   /// Serializes this SongDto to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -76,6 +78,7 @@ abstract class $SongDtoCopyWith<$Res> {
     int? year,
     String? genre,
     @JsonKey(name: 'albumArtist') String? albumArtist,
+    @JsonKey(name: 'userRating') int? userRating,
   });
 }
 
@@ -111,6 +114,7 @@ class _$SongDtoCopyWithImpl<$Res, $Val extends SongDto>
     Object? year = freezed,
     Object? genre = freezed,
     Object? albumArtist = freezed,
+    Object? userRating = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -182,6 +186,10 @@ class _$SongDtoCopyWithImpl<$Res, $Val extends SongDto>
                 ? _value.albumArtist
                 : albumArtist // ignore: cast_nullable_to_non_nullable
                       as String?,
+            userRating: freezed == userRating
+                ? _value.userRating
+                : userRating // ignore: cast_nullable_to_non_nullable
+                      as int?,
           )
           as $Val,
     );
@@ -214,6 +222,7 @@ abstract class _$$SongDtoImplCopyWith<$Res> implements $SongDtoCopyWith<$Res> {
     int? year,
     String? genre,
     @JsonKey(name: 'albumArtist') String? albumArtist,
+    @JsonKey(name: 'userRating') int? userRating,
   });
 }
 
@@ -248,6 +257,7 @@ class __$$SongDtoImplCopyWithImpl<$Res>
     Object? year = freezed,
     Object? genre = freezed,
     Object? albumArtist = freezed,
+    Object? userRating = freezed,
   }) {
     return _then(
       _$SongDtoImpl(
@@ -319,6 +329,10 @@ class __$$SongDtoImplCopyWithImpl<$Res>
             ? _value.albumArtist
             : albumArtist // ignore: cast_nullable_to_non_nullable
                   as String?,
+        userRating: freezed == userRating
+            ? _value.userRating
+            : userRating // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }
@@ -345,6 +359,7 @@ class _$SongDtoImpl implements _SongDto {
     this.year,
     this.genre,
     @JsonKey(name: 'albumArtist') this.albumArtist,
+    @JsonKey(name: 'userRating') this.userRating,
   });
 
   factory _$SongDtoImpl.fromJson(Map<String, dynamic> json) =>
@@ -389,10 +404,14 @@ class _$SongDtoImpl implements _SongDto {
   @override
   @JsonKey(name: 'albumArtist')
   final String? albumArtist;
+  // Subsonic `userRating` (1-5) — present only when the user has rated.
+  @override
+  @JsonKey(name: 'userRating')
+  final int? userRating;
 
   @override
   String toString() {
-    return 'SongDto(id: $id, title: $title, albumId: $albumId, artistId: $artistId, album: $album, artist: $artist, duration: $duration, bitRate: $bitRate, contentType: $contentType, suffix: $suffix, size: $size, coverArtId: $coverArtId, track: $track, discNumber: $discNumber, year: $year, genre: $genre, albumArtist: $albumArtist)';
+    return 'SongDto(id: $id, title: $title, albumId: $albumId, artistId: $artistId, album: $album, artist: $artist, duration: $duration, bitRate: $bitRate, contentType: $contentType, suffix: $suffix, size: $size, coverArtId: $coverArtId, track: $track, discNumber: $discNumber, year: $year, genre: $genre, albumArtist: $albumArtist, userRating: $userRating)';
   }
 
   @override
@@ -422,7 +441,9 @@ class _$SongDtoImpl implements _SongDto {
             (identical(other.year, year) || other.year == year) &&
             (identical(other.genre, genre) || other.genre == genre) &&
             (identical(other.albumArtist, albumArtist) ||
-                other.albumArtist == albumArtist));
+                other.albumArtist == albumArtist) &&
+            (identical(other.userRating, userRating) ||
+                other.userRating == userRating));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -446,6 +467,7 @@ class _$SongDtoImpl implements _SongDto {
     year,
     genre,
     albumArtist,
+    userRating,
   );
 
   /// Create a copy of SongDto
@@ -481,6 +503,7 @@ abstract class _SongDto implements SongDto {
     final int? year,
     final String? genre,
     @JsonKey(name: 'albumArtist') final String? albumArtist,
+    @JsonKey(name: 'userRating') final int? userRating,
   }) = _$SongDtoImpl;
 
   factory _SongDto.fromJson(Map<String, dynamic> json) = _$SongDtoImpl.fromJson;
@@ -523,7 +546,10 @@ abstract class _SongDto implements SongDto {
   String? get genre;
   @override
   @JsonKey(name: 'albumArtist')
-  String? get albumArtist;
+  String? get albumArtist; // Subsonic `userRating` (1-5) — present only when the user has rated.
+  @override
+  @JsonKey(name: 'userRating')
+  int? get userRating;
 
   /// Create a copy of SongDto
   /// with the given fields replaced by the non-null parameter values.

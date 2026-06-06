@@ -14,6 +14,10 @@ class DeviceSettingsTable extends Table {
       boolean().withDefault(const Constant(false))();
   BoolColumn get overwriteExisting =>
       boolean().withDefault(const Constant(false))();
+  // v4: per-device transcoding target.
+  TextColumn get transcodeFormat =>
+      text().withDefault(const Constant('original'))();
+  IntColumn get transcodeMaxBitRate => integer().nullable()();
 
   @override
   Set<Column> get primaryKey => {devicePath};

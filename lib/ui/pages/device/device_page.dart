@@ -14,6 +14,7 @@ import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../../domain/repositories/library_repository.dart';
+import '../../widgets/confirm_dialog.dart';
 import 'device_file_browser.dart';
 import 'device_settings_dialog.dart';
 
@@ -796,24 +797,89 @@ class _QueueList extends ConsumerWidget {
             ),
           ),
 
-        // ── Clear finished button ─────────────────────────────────────────────
-        if (queue.any((t) =>
-            t.status == TransferStatus.completed ||
-            t.status == TransferStatus.cancelled ||
-            t.status == TransferStatus.failed))
-          Padding(
-            padding: const EdgeInsets.fromLTRB(24, 6, 24, 0),
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: TextButton(
-                onPressed: () =>
-                    ref.read(transferQueueProvider.notifier).clearCompleted(),
-                child: const Text('Clear finished',
-                    style: TextStyle(
-                        fontSize: 11, color: ColorTokens.textSecondary)),
-              ),
+        // ── Bulk actions row ──────────────────────────────────────────────────
+        Builder(builder: (_) {
+          final notifier = ref.read(transferQueueProvider.notifier);
+          final hasActive = queue.any((t) =>
+              t.status == TransferStatus.queued ||
+              t.status == TransferStatus.inProgress);
+          final hasFailed = queue.any((t) => t.status == TransferStatus.failed);
+          final hasFinished = queue.any((t) =>
+              t.status == TransferStatus.completed ||
+              t.status == TransferStatus.cancelled ||
+              t.status == TransferStatus.failed);
+          final isPaused = notifier.isAnyDevicePaused;
+          if (!hasActive && !hasFailed && !hasFinished && !isPaused) {
+            return const SizedBox.shrink();
+          }
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (hasActive || isPaused)
+                  TextButton.icon(
+                    icon: Icon(isPaused ? Icons.play_arrow : Icons.pause,
+                        size: 14),
+                    label: Text(isPaused ? 'Resume all' : 'Pause all',
+                        style: const TextStyle(fontSize: 11)),
+                    onPressed: isPaused ? notifier.resume : notifier.pause,
+                    style: TextButton.styleFrom(
+                      foregroundColor: ColorTokens.textSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                if (hasFailed)
+                  TextButton.icon(
+                    icon: const Icon(Icons.refresh, size: 14),
+                    label: const Text('Retry all',
+                        style: TextStyle(fontSize: 11)),
+                    onPressed: notifier.retryAllFailed,
+                    style: TextButton.styleFrom(
+                      foregroundColor: ColorTokens.textSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                if (hasActive)
+                  TextButton.icon(
+                    icon: const Icon(Icons.cancel_outlined, size: 14),
+                    label: const Text('Cancel all',
+                        style: TextStyle(fontSize: 11)),
+                    onPressed: () async {
+                      final ok = await showConfirmDialog(
+                        context,
+                        title: 'Cancel all transfers?',
+                        message:
+                            'In-progress downloads will be aborted and queued '
+                            'transfers will be removed.',
+                        confirmLabel: 'Cancel all',
+                        destructive: true,
+                      );
+                      if (ok) notifier.cancelAll();
+                    },
+                    style: TextButton.styleFrom(
+                      foregroundColor: ColorTokens.textSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                    ),
+                  ),
+                if (hasFinished)
+                  TextButton(
+                    onPressed: notifier.clearCompleted,
+                    style: TextButton.styleFrom(
+                      foregroundColor: ColorTokens.textSecondary,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                    ),
+                    child: const Text('Clear finished',
+                        style: TextStyle(fontSize: 11)),
+                  ),
+              ],
             ),
-          ),
+          );
+        }),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.symmetric(vertical: 8),

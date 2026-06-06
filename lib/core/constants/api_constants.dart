@@ -23,4 +23,7 @@ class ApiConstants {
   static const String deletePlaylist = '/rest/deletePlaylist';
   static const String star = '/rest/star';
   static const String unstar = '/rest/unstar';
+  static const String scrobble = '/rest/scrobble';
+  static const String getLyricsBySongId = '/rest/getLyricsBySongId';
+  static const String setRating = '/rest/setRating';
 }

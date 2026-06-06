@@ -3,11 +3,13 @@ import 'dart:developer' as dev;
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:uuid/uuid.dart';
 
 import '../../domain/models/connected_device.dart';
+import '../../domain/models/device_settings.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/song.dart';
 import '../../domain/models/transfer_task.dart';
@@ -37,6 +39,13 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   final _taskPlaylistGroup = <String, String>{};
   final _pendingPlaylistWrites =
       <String, ({Playlist playlist, String devicePath, int remaining})>{};
+  // Devices whose engines are paused: in-flight downloads run to completion
+  // but the engine won't pick up new tasks. Kept in memory only — restart =
+  // unpaused, which matches the principle of least surprise.
+  final _pausedDevices = <String>{};
+  // Completer the engine awaits while paused-and-idle. Resume completes it
+  // so the loop checks the queue again. One per device.
+  final _pauseWakers = <String, Completer<void>>{};
 
   @override
   List<TransferTask> build() {
@@ -54,6 +63,12 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         if (!token.isCancelled) token.cancel('TransferQueueNotifier disposed');
       }
       _cancelTokens.clear();
+      // Drain any sleeping pause-wakers so engine futures don't dangle.
+      for (final waker in _pauseWakers.values) {
+        if (!waker.isCompleted) waker.complete();
+      }
+      _pauseWakers.clear();
+      _pausedDevices.clear();
       _dio.close(force: true);
     });
 
@@ -80,7 +95,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
           .map((t) => t.devicePath)
           .toSet();
       for (final d in devices) {
-        _startEngineForDevice(d, repo.downloadUri);
+        _startEngineForDevice(d);
       }
     });
 
@@ -98,8 +113,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
   void enqueue(
     List<Song> songs,
-    String devicePath,
-    Uri Function(String) downloadUri, {
+    String devicePath, {
     Map<String, int>? expectedAlbumSongCounts,
   }) {
     if (expectedAlbumSongCounts != null) {
@@ -115,14 +129,10 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         .toList();
 
     state = [...state, ...newTasks];
-    _startEngineForDevice(devicePath, downloadUri);
+    _startEngineForDevice(devicePath);
   }
 
-  void enqueuePlaylist(
-    Playlist playlist,
-    String devicePath,
-    Uri Function(String) downloadUri,
-  ) {
+  void enqueuePlaylist(Playlist playlist, String devicePath) {
     if (playlist.songs.isEmpty) return;
 
     final groupId = _uuid.v4();
@@ -140,7 +150,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     );
 
     state = [...state, ...newTasks];
-    _startEngineForDevice(devicePath, downloadUri);
+    _startEngineForDevice(devicePath);
   }
 
   void cancel(String taskId) {
@@ -151,9 +161,70 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         .toList();
   }
 
+  /// Cancels every queued + in-progress task; pass [devicePath] to scope it
+  /// to a single device. In-progress tasks are aborted via their cancel token.
+  void cancelAll({String? devicePath}) {
+    state = state.map((t) {
+      if (devicePath != null && t.devicePath != devicePath) return t;
+      if (t.status == TransferStatus.inProgress) {
+        _cancelTokens[t.id]?.cancel('Bulk cancel');
+        return t.copyWith(status: TransferStatus.cancelled);
+      }
+      if (t.status == TransferStatus.queued) {
+        return t.copyWith(status: TransferStatus.cancelled);
+      }
+      return t;
+    }).toList();
+  }
+
+  /// Re-queues every failed task; pass [devicePath] to scope it. Starts the
+  /// engine once per affected device rather than once per task.
+  void retryAllFailed({String? devicePath}) {
+    final touchedDevices = <String>{};
+    state = state.map((t) {
+      if (t.status != TransferStatus.failed) return t;
+      if (devicePath != null && t.devicePath != devicePath) return t;
+      touchedDevices.add(t.devicePath);
+      return t.copyWith(
+        status: TransferStatus.queued,
+        errorMessage: null,
+        bytesReceived: 0,
+        totalBytes: 0,
+      );
+    }).toList();
+    for (final d in touchedDevices) {
+      _startEngineForDevice(d);
+    }
+  }
+
+  /// Pauses the engine for [devicePath] (or all active devices when null).
+  /// In-flight downloads finish; new ones won't start until [resume] is called.
+  void pause({String? devicePath}) {
+    if (devicePath != null) {
+      _pausedDevices.add(devicePath);
+      return;
+    }
+    final devices = state.map((t) => t.devicePath).toSet();
+    _pausedDevices.addAll(devices);
+  }
+
+  /// Resumes the engine for [devicePath] (or all paused devices when null).
+  /// Wakes the engine loop if it was sleeping on a pause waker.
+  void resume({String? devicePath}) {
+    final targets = devicePath != null
+        ? {devicePath}
+        : Set<String>.from(_pausedDevices);
+    for (final d in targets) {
+      _pausedDevices.remove(d);
+      _pauseWakers.remove(d)?.complete();
+      _startEngineForDevice(d);
+    }
+  }
+
+  bool isPaused(String devicePath) => _pausedDevices.contains(devicePath);
+  bool get isAnyDevicePaused => _pausedDevices.isNotEmpty;
+
   void retry(String taskId) {
-    final repo = ref.read(libraryRepositoryProvider);
-    if (repo == null) return;
     final task = state
         .where((t) => t.id == taskId && t.status == TransferStatus.failed)
         .firstOrNull;
@@ -169,7 +240,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         else
           t,
     ];
-    _startEngineForDevice(task.devicePath, repo.downloadUri);
+    _startEngineForDevice(task.devicePath);
   }
 
   void clearCompleted() {
@@ -183,15 +254,13 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
   // ── Engine ────────────────────────────────────────────────────────────────
 
-  void _startEngineForDevice(
-      String devicePath, Uri Function(String) downloadUri) {
+  void _startEngineForDevice(String devicePath) {
     if (_runningEngines.contains(devicePath)) return;
-    _runEngine(devicePath, downloadUri);
+    _runEngine(devicePath);
   }
 
   // Runs up to [_concurrency] downloads in parallel for a single device.
-  Future<void> _runEngine(
-      String devicePath, Uri Function(String) downloadUri) async {
+  Future<void> _runEngine(String devicePath) async {
     _runningEngines.add(devicePath);
     var runningCount = 0;
     Completer<void>? slot; // completed whenever a task finishes
@@ -199,11 +268,20 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     while (true) {
       final hasQueued = state.any((t) =>
           t.devicePath == devicePath && t.status == TransferStatus.queued);
+      final paused = _pausedDevices.contains(devicePath);
 
-      if (!hasQueued && runningCount == 0) break;
+      if (!hasQueued && runningCount == 0 && !paused) break;
+
+      // Paused with no in-flight: sleep on a fresh waker until resume() fires.
+      if (paused && runningCount == 0) {
+        final waker = Completer<void>();
+        _pauseWakers[devicePath] = waker;
+        await waker.future;
+        continue;
+      }
 
       final concurrency = ref.read(appSettingsProvider).transferConcurrency;
-      if (hasQueued && runningCount < concurrency) {
+      if (hasQueued && runningCount < concurrency && !paused) {
         final next = state
             .where((t) =>
                 t.devicePath == devicePath &&
@@ -212,7 +290,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         runningCount++;
         // _executeTask marks next as inProgress synchronously before its first
         // await, so the next loop iteration won't pick the same task again.
-        unawaited(_executeTask(next, downloadUri).whenComplete(() {
+        unawaited(_executeTask(next).whenComplete(() {
           runningCount--;
           final c = slot;
           slot = null;
@@ -221,7 +299,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         continue; // immediately try to fill another slot
       }
 
-      // At capacity or waiting for remaining tasks to finish.
+      // At capacity, paused with in-flights, or queue empty but tasks running.
       slot = Completer();
       await slot!.future;
     }
@@ -229,8 +307,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     _runningEngines.remove(devicePath);
   }
 
-  Future<void> _executeTask(
-      TransferTask task, Uri Function(String) downloadUri) async {
+  Future<void> _executeTask(TransferTask task) async {
     _updateTask(task.id, (t) => t.copyWith(status: TransferStatus.inProgress));
 
     final cancelToken = CancelToken();
@@ -252,20 +329,48 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
       await Directory(p.dirname(targetPath)).create(recursive: true);
 
-      final url = downloadUri(task.song.id).toString();
+      // URL is computed at execution time so transcoding-setting changes
+      // applied between enqueue and run take effect on later tasks. If the
+      // library repo is unavailable (server switched mid-flight, no server),
+      // mark this task as failed rather than crashing.
+      final repo = ref.read(libraryRepositoryProvider);
+      if (repo == null) {
+        _updateTask(task.id, (t) => t.copyWith(
+              status: TransferStatus.failed,
+              errorMessage: 'No active server',
+            ));
+        return;
+      }
+      final url = repo
+          .transferUri(
+            task.song.id,
+            format: settings.transcodeFormat.apiName,
+            maxBitRate: settings.transcodeMaxBitRate,
+          )
+          .toString();
+      // Estimate total bytes when the server doesn't send Content-Length —
+      // common for on-the-fly transcoded responses. Without this the UI
+      // sits at 0% for the entire transfer.
+      final estimatedTotal = _estimateTotalBytes(task.song, settings);
       await _dio.download(
         url,
         targetPath,
         cancelToken: cancelToken,
         onReceiveProgress: (received, total) {
-          if (total <= 0) return;
+          // Prefer the server-supplied total; fall back to our estimate so
+          // transcoded downloads show progress too.
+          final effectiveTotal = total > 0 ? total : estimatedTotal;
+          if (effectiveTotal <= 0) return;
           // Throttle to ~200 ms. Only updates the lightweight progress
           // provider — the main task state is untouched until completion.
           final now = DateTime.now().millisecondsSinceEpoch;
           if ((now - (_lastProgressMs[task.id] ?? 0)) < 200) return;
           _lastProgressMs[task.id] = now;
+          // Clamp received to total so the bar can't briefly read >100% if
+          // the estimate is too pessimistic.
+          final clamped = received > effectiveTotal ? effectiveTotal : received;
           ref.read(transferProgressProvider.notifier).update(
-              (m) => {...m, task.id: (received, total)});
+              (m) => {...m, task.id: (clamped, effectiveTotal)});
         },
       );
       await removeMacOSSidecar(targetPath);
@@ -352,6 +457,35 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     state = state.map((t) => t.id == id ? update(t) : t).toList();
   }
 }
+
+/// Best-effort estimate of how many bytes a transfer will receive when the
+/// server doesn't send a Content-Length header. Used to keep the progress bar
+/// alive during transcoded transfers.
+///
+/// Strategy:
+///   • Not transcoding → use [Song.size] (the server returns the file as-is).
+///   • Transcoding with a max-bitrate cap → estimate from `duration × bitrate`,
+///     which is the worst case the server will produce.
+///   • Transcoding without a cap → fall back to [Song.size] (transcoded size
+///     is usually smaller; the bar may finish before reaching 100% but at
+///     least it moves).
+///   • Anything missing → 0, which the caller treats as "skip the update".
+@visibleForTesting
+int estimateTotalBytes(Song song, DeviceSettings settings) {
+  if (!settings.isTranscoding) {
+    return song.size ?? 0;
+  }
+  final cap = settings.transcodeMaxBitRate;
+  final duration = song.duration;
+  if (cap != null && cap > 0 && duration != null && duration > 0) {
+    // kbps × seconds × 1000 / 8 → bytes
+    return (cap * duration * 1000) ~/ 8;
+  }
+  return song.size ?? 0;
+}
+
+int _estimateTotalBytes(Song song, DeviceSettings settings) =>
+    estimateTotalBytes(song, settings);
 
 // ── Computed selectors ────────────────────────────────────────────────────────
 

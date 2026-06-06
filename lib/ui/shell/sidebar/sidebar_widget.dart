@@ -8,6 +8,7 @@ import 'package:macos_window_utils/widgets/transparent_macos_sidebar.dart';
 
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/playlist_actions_notifier.dart';
+import '../../../application/library/search_focus.dart';
 import '../../../application/library/sidebar_state.dart';
 import '../../../application/providers/providers.dart';
 import '../../../core/constants/app_constants.dart';
@@ -46,6 +47,7 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
         height: 26,
         child: TextField(
           controller: _ctrl,
+          focusNode: ref.watch(searchFocusProvider),
           style: const TextStyle(fontSize: 12, color: ColorTokens.textPrimary),
           decoration: InputDecoration(
             hintText: 'Search…',
@@ -160,6 +162,22 @@ class _SidebarContent extends ConsumerWidget {
             section: SidebarSection.songs,
             selected: selected,
             ref: ref,
+          ),
+          _SidebarTile(
+            icon: Icons.category_outlined,
+            label: 'Genres',
+            section: SidebarSection.genres,
+            selected: selected,
+            ref: ref,
+            onTap: () {
+              ref.read(searchQueryProvider.notifier).state = '';
+              ref.read(selectedSectionProvider.notifier).state =
+                  SidebarSection.genres;
+              // Clearing the drill-down state ensures we land on the genre
+              // list rather than a stale album from another section.
+              ref.read(selectedAlbumIdProvider.notifier).state = null;
+              ref.read(selectedGenreProvider.notifier).state = null;
+            },
           ),
           const SizedBox(height: 16),
           _PlaylistsSectionHeader(ref: ref),

@@ -22,6 +22,7 @@ _$AlbumDtoImpl _$$AlbumDtoImplFromJson(Map<String, dynamic> json) =>
               ?.map((e) => SongDto.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      userRating: (json['userRating'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$$AlbumDtoImplToJson(_$AlbumDtoImpl instance) =>
@@ -36,4 +37,5 @@ Map<String, dynamic> _$$AlbumDtoImplToJson(_$AlbumDtoImpl instance) =>
       'songCount': instance.songCount,
       'duration': instance.duration,
       'song': instance.songs,
+      'userRating': instance.userRating,
     };

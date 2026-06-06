@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -29,6 +29,13 @@ class AppDatabase extends _$AppDatabase {
             // but is no longer read by Drift (ignored extra column).
             await m.addColumn(
                 deviceSettingsTable, deviceSettingsTable.filenameFormat);
+          }
+          if (from < 4) {
+            // Per-device transcoding target.
+            await m.addColumn(
+                deviceSettingsTable, deviceSettingsTable.transcodeFormat);
+            await m.addColumn(
+                deviceSettingsTable, deviceSettingsTable.transcodeMaxBitRate);
           }
         },
       );

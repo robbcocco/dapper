@@ -35,6 +35,8 @@ mixin _$AlbumDto {
   int get duration => throw _privateConstructorUsedError;
   @JsonKey(name: 'song')
   List<SongDto> get songs => throw _privateConstructorUsedError;
+  @JsonKey(name: 'userRating')
+  int? get userRating => throw _privateConstructorUsedError;
 
   /// Serializes this AlbumDto to a JSON map.
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
@@ -62,6 +64,7 @@ abstract class $AlbumDtoCopyWith<$Res> {
     @JsonKey(name: 'songCount') int songCount,
     int duration,
     @JsonKey(name: 'song') List<SongDto> songs,
+    @JsonKey(name: 'userRating') int? userRating,
   });
 }
 
@@ -90,6 +93,7 @@ class _$AlbumDtoCopyWithImpl<$Res, $Val extends AlbumDto>
     Object? songCount = null,
     Object? duration = null,
     Object? songs = null,
+    Object? userRating = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -133,6 +137,10 @@ class _$AlbumDtoCopyWithImpl<$Res, $Val extends AlbumDto>
                 ? _value.songs
                 : songs // ignore: cast_nullable_to_non_nullable
                       as List<SongDto>,
+            userRating: freezed == userRating
+                ? _value.userRating
+                : userRating // ignore: cast_nullable_to_non_nullable
+                      as int?,
           )
           as $Val,
     );
@@ -159,6 +167,7 @@ abstract class _$$AlbumDtoImplCopyWith<$Res>
     @JsonKey(name: 'songCount') int songCount,
     int duration,
     @JsonKey(name: 'song') List<SongDto> songs,
+    @JsonKey(name: 'userRating') int? userRating,
   });
 }
 
@@ -186,6 +195,7 @@ class __$$AlbumDtoImplCopyWithImpl<$Res>
     Object? songCount = null,
     Object? duration = null,
     Object? songs = null,
+    Object? userRating = freezed,
   }) {
     return _then(
       _$AlbumDtoImpl(
@@ -229,6 +239,10 @@ class __$$AlbumDtoImplCopyWithImpl<$Res>
             ? _value._songs
             : songs // ignore: cast_nullable_to_non_nullable
                   as List<SongDto>,
+        userRating: freezed == userRating
+            ? _value.userRating
+            : userRating // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }
@@ -248,6 +262,7 @@ class _$AlbumDtoImpl implements _AlbumDto {
     @JsonKey(name: 'songCount') this.songCount = 0,
     this.duration = 0,
     @JsonKey(name: 'song') final List<SongDto> songs = const [],
+    @JsonKey(name: 'userRating') this.userRating,
   }) : _songs = songs;
 
   factory _$AlbumDtoImpl.fromJson(Map<String, dynamic> json) =>
@@ -285,8 +300,12 @@ class _$AlbumDtoImpl implements _AlbumDto {
   }
 
   @override
+  @JsonKey(name: 'userRating')
+  final int? userRating;
+
+  @override
   String toString() {
-    return 'AlbumDto(id: $id, name: $name, artistId: $artistId, artist: $artist, coverArtId: $coverArtId, year: $year, genre: $genre, songCount: $songCount, duration: $duration, songs: $songs)';
+    return 'AlbumDto(id: $id, name: $name, artistId: $artistId, artist: $artist, coverArtId: $coverArtId, year: $year, genre: $genre, songCount: $songCount, duration: $duration, songs: $songs, userRating: $userRating)';
   }
 
   @override
@@ -307,7 +326,9 @@ class _$AlbumDtoImpl implements _AlbumDto {
                 other.songCount == songCount) &&
             (identical(other.duration, duration) ||
                 other.duration == duration) &&
-            const DeepCollectionEquality().equals(other._songs, _songs));
+            const DeepCollectionEquality().equals(other._songs, _songs) &&
+            (identical(other.userRating, userRating) ||
+                other.userRating == userRating));
   }
 
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -324,6 +345,7 @@ class _$AlbumDtoImpl implements _AlbumDto {
     songCount,
     duration,
     const DeepCollectionEquality().hash(_songs),
+    userRating,
   );
 
   /// Create a copy of AlbumDto
@@ -352,6 +374,7 @@ abstract class _AlbumDto implements AlbumDto {
     @JsonKey(name: 'songCount') final int songCount,
     final int duration,
     @JsonKey(name: 'song') final List<SongDto> songs,
+    @JsonKey(name: 'userRating') final int? userRating,
   }) = _$AlbumDtoImpl;
 
   factory _AlbumDto.fromJson(Map<String, dynamic> json) =
@@ -381,6 +404,9 @@ abstract class _AlbumDto implements AlbumDto {
   @override
   @JsonKey(name: 'song')
   List<SongDto> get songs;
+  @override
+  @JsonKey(name: 'userRating')
+  int? get userRating;
 
   /// Create a copy of AlbumDto
   /// with the given fields replaced by the non-null parameter values.

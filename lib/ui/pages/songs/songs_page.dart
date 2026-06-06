@@ -14,6 +14,7 @@ import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
+import '../../widgets/error_retry.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/sync_dot.dart';
 
@@ -54,9 +55,9 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       return const Center(child: CircularProgressIndicator());
     }
     if (s.error != null && s.songs.isEmpty) {
-      return Center(
-        child: Text('${s.error}',
-            style: const TextStyle(color: ColorTokens.textSecondary)),
+      return ErrorRetry(
+        error: s.error!,
+        onRetry: () => ref.read(allSongsProvider.notifier).refresh(),
       );
     }
 
@@ -326,7 +327,7 @@ class _SongTableRow extends ConsumerWidget {
       if (repo != null) {
         ref
             .read(transferQueueProvider.notifier)
-            .enqueue([song], devicePath, repo.downloadUri);
+            .enqueue([song], devicePath);
       }
     } else if (result == 'playlist') {
       unawaited(showAddToPlaylistDialog(ctx, ref, [song.id]));

@@ -34,6 +34,7 @@ mixin _$Song {
   int? get year => throw _privateConstructorUsedError;
   String? get genre => throw _privateConstructorUsedError;
   String? get albumArtist => throw _privateConstructorUsedError;
+  int? get userRating => throw _privateConstructorUsedError;
 
   /// Create a copy of Song
   /// with the given fields replaced by the non-null parameter values.
@@ -64,6 +65,7 @@ abstract class $SongCopyWith<$Res> {
     int? year,
     String? genre,
     String? albumArtist,
+    int? userRating,
   });
 }
 
@@ -99,6 +101,7 @@ class _$SongCopyWithImpl<$Res, $Val extends Song>
     Object? year = freezed,
     Object? genre = freezed,
     Object? albumArtist = freezed,
+    Object? userRating = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -170,6 +173,10 @@ class _$SongCopyWithImpl<$Res, $Val extends Song>
                 ? _value.albumArtist
                 : albumArtist // ignore: cast_nullable_to_non_nullable
                       as String?,
+            userRating: freezed == userRating
+                ? _value.userRating
+                : userRating // ignore: cast_nullable_to_non_nullable
+                      as int?,
           )
           as $Val,
     );
@@ -202,6 +209,7 @@ abstract class _$$SongImplCopyWith<$Res> implements $SongCopyWith<$Res> {
     int? year,
     String? genre,
     String? albumArtist,
+    int? userRating,
   });
 }
 
@@ -234,6 +242,7 @@ class __$$SongImplCopyWithImpl<$Res>
     Object? year = freezed,
     Object? genre = freezed,
     Object? albumArtist = freezed,
+    Object? userRating = freezed,
   }) {
     return _then(
       _$SongImpl(
@@ -305,6 +314,10 @@ class __$$SongImplCopyWithImpl<$Res>
             ? _value.albumArtist
             : albumArtist // ignore: cast_nullable_to_non_nullable
                   as String?,
+        userRating: freezed == userRating
+            ? _value.userRating
+            : userRating // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }
@@ -331,6 +344,7 @@ class _$SongImpl implements _Song {
     this.year,
     this.genre,
     this.albumArtist,
+    this.userRating,
   });
 
   @override
@@ -367,10 +381,12 @@ class _$SongImpl implements _Song {
   final String? genre;
   @override
   final String? albumArtist;
+  @override
+  final int? userRating;
 
   @override
   String toString() {
-    return 'Song(id: $id, title: $title, albumId: $albumId, artistId: $artistId, album: $album, artist: $artist, duration: $duration, bitRate: $bitRate, contentType: $contentType, suffix: $suffix, size: $size, coverArtId: $coverArtId, track: $track, discNumber: $discNumber, year: $year, genre: $genre, albumArtist: $albumArtist)';
+    return 'Song(id: $id, title: $title, albumId: $albumId, artistId: $artistId, album: $album, artist: $artist, duration: $duration, bitRate: $bitRate, contentType: $contentType, suffix: $suffix, size: $size, coverArtId: $coverArtId, track: $track, discNumber: $discNumber, year: $year, genre: $genre, albumArtist: $albumArtist, userRating: $userRating)';
   }
 
   @override
@@ -400,7 +416,9 @@ class _$SongImpl implements _Song {
             (identical(other.year, year) || other.year == year) &&
             (identical(other.genre, genre) || other.genre == genre) &&
             (identical(other.albumArtist, albumArtist) ||
-                other.albumArtist == albumArtist));
+                other.albumArtist == albumArtist) &&
+            (identical(other.userRating, userRating) ||
+                other.userRating == userRating));
   }
 
   @override
@@ -423,6 +441,7 @@ class _$SongImpl implements _Song {
     year,
     genre,
     albumArtist,
+    userRating,
   );
 
   /// Create a copy of Song
@@ -453,6 +472,7 @@ abstract class _Song implements Song {
     final int? year,
     final String? genre,
     final String? albumArtist,
+    final int? userRating,
   }) = _$SongImpl;
 
   @override
@@ -489,6 +509,8 @@ abstract class _Song implements Song {
   String? get genre;
   @override
   String? get albumArtist;
+  @override
+  int? get userRating;
 
   /// Create a copy of Song
   /// with the given fields replaced by the non-null parameter values.

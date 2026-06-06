@@ -24,6 +24,7 @@ import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
+import '../../widgets/error_retry.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
 import '../../widgets/sync_dot.dart';
@@ -50,9 +51,10 @@ class ArtistsPage extends ConsumerWidget {
 
     return artists.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-          child: Text('$e',
-              style: const TextStyle(color: ColorTokens.textSecondary))),
+      error: (e, _) => ErrorRetry(
+        error: e,
+        onRetry: () => ref.invalidate(artistsProvider),
+      ),
       data: (list) {
         final selectedArtist = selectedArtistId != null
             ? list.cast<Artist?>().firstWhere(
@@ -244,7 +246,10 @@ class _ArtistDetailPanel extends ConsumerWidget {
 
     return albumsAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (e, _) => ErrorRetry(
+        error: e,
+        onRetry: () => ref.invalidate(albumsByArtistProvider(artist.id)),
+      ),
       data: (albums) {
         final totalSongs = albums.fold(0, (sum, a) => sum + a.songCount);
 
@@ -401,7 +406,7 @@ class _ArtistDetailPanel extends ConsumerWidget {
     if (allSongs.isEmpty) return;
     ref
         .read(transferQueueProvider.notifier)
-        .enqueue(allSongs, devicePath, repo.downloadUri,
+        .enqueue(allSongs, devicePath,
             expectedAlbumSongCounts: expectedCounts);
   }
 }
@@ -940,7 +945,7 @@ class _AlbumSection extends ConsumerWidget {
       final expectedCounts = folder != null ? {folder: full.songCount} : null;
       ref
           .read(transferQueueProvider.notifier)
-          .enqueue(full.songs, devicePath, repo.downloadUri,
+          .enqueue(full.songs, devicePath,
               expectedAlbumSongCounts: expectedCounts);
     } else if (result == 'playlist') {
       final full = await ref.read(albumProvider(album.id).future);
@@ -1073,7 +1078,6 @@ Future<void> _showArtistMenu(
     ref.read(transferQueueProvider.notifier).enqueue(
           allSongs,
           devicePath,
-          repo.downloadUri,
           expectedAlbumSongCounts: expectedCounts,
         );
   }

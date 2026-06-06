@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/models/album.dart';
 import '../../domain/models/artist.dart';
+import '../../domain/models/genre.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/search_results.dart';
 import '../../domain/models/song.dart';
@@ -278,6 +279,24 @@ final playlistProvider =
   final repo = ref.watch(libraryRepositoryProvider);
   if (repo == null) return null;
   return repo.getPlaylist(playlistId);
+});
+
+// ── Genres ────────────────────────────────────────────────────────────────────
+
+final genresProvider = FutureProvider<List<Genre>>((ref) async {
+  final repo = ref.watch(libraryRepositoryProvider);
+  if (repo == null) return [];
+  final list = await repo.getGenres();
+  // Sort by song count descending — heaviest-used genres rise to the top.
+  list.sort((a, b) => b.songCount.compareTo(a.songCount));
+  return list;
+});
+
+final albumsByGenreProvider =
+    FutureProvider.family<List<Album>, String>((ref, genre) async {
+  final repo = ref.watch(libraryRepositoryProvider);
+  if (repo == null) return [];
+  return repo.getAlbumsByGenre(genre);
 });
 
 // ── Search ────────────────────────────────────────────────────────────────────

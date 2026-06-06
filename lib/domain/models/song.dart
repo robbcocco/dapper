@@ -22,5 +22,6 @@ class Song with _$Song {
     int? year,
     String? genre,
     String? albumArtist,
+    int? userRating,
   }) = _Song;
 }

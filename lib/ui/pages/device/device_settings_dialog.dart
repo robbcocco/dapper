@@ -23,12 +23,17 @@ class DeviceSettingsDialog extends ConsumerStatefulWidget {
 }
 
 class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
+  // The bitrate dropdown's options. Null = unlimited (server decides).
+  static const _bitRateChoices = <int?>[null, 96, 128, 192, 256, 320];
+
   late TextEditingController _rootCtrl;
   late TextEditingController _playlistCtrl;
   late FolderStructure _folderStructure;
   late FilenameFormat _filenameFormat;
   late bool _includeYear;
   late bool _overwriteExisting;
+  late TranscodeFormat _transcodeFormat;
+  late int? _transcodeMaxBitRate;
 
   @override
   void initState() {
@@ -40,6 +45,8 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
     _filenameFormat = settings.filenameFormat;
     _includeYear = settings.includeYear;
     _overwriteExisting = settings.overwriteExisting;
+    _transcodeFormat = settings.transcodeFormat;
+    _transcodeMaxBitRate = settings.transcodeMaxBitRate;
   }
 
   @override
@@ -59,6 +66,11 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
             filenameFormat: _filenameFormat,
             includeYear: _includeYear,
             overwriteExisting: _overwriteExisting,
+            transcodeFormat: _transcodeFormat,
+            // Bit-rate is only meaningful when actually transcoding.
+            transcodeMaxBitRate: _transcodeFormat == TranscodeFormat.original
+                ? null
+                : _transcodeMaxBitRate,
           ),
         );
     Navigator.of(context).pop();
@@ -157,6 +169,68 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                   ).toList(),
                 ),
               ),
+
+              const SizedBox(height: 20),
+              _SectionLabel('TRANSCODING'),
+              const SizedBox(height: 8),
+              _SettingRow(
+                label: 'Format',
+                hint: 'Re-encode on the server before transfer',
+                child: DropdownButtonFormField<TranscodeFormat>(
+                  initialValue: _transcodeFormat,
+                  isDense: true,
+                  decoration: const InputDecoration(
+                    filled: true,
+                    fillColor: ColorTokens.surfaceVariant,
+                    border: OutlineInputBorder(borderSide: BorderSide.none),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  ),
+                  dropdownColor: ColorTokens.surface,
+                  style: const TextStyle(
+                      fontSize: 13, color: ColorTokens.textPrimary),
+                  items: TranscodeFormat.values
+                      .map((f) => DropdownMenuItem(
+                            value: f,
+                            child: Text(f.label),
+                          ))
+                      .toList(),
+                  onChanged: (v) {
+                    if (v != null) setState(() => _transcodeFormat = v);
+                  },
+                ),
+              ),
+              if (_transcodeFormat != TranscodeFormat.original) ...[
+                const SizedBox(height: 12),
+                _SettingRow(
+                  label: 'Max bitrate',
+                  hint: 'Server caps re-encoded streams',
+                  child: DropdownButtonFormField<int?>(
+                    initialValue: _bitRateChoices.contains(_transcodeMaxBitRate)
+                        ? _transcodeMaxBitRate
+                        : null,
+                    isDense: true,
+                    decoration: const InputDecoration(
+                      filled: true,
+                      fillColor: ColorTokens.surfaceVariant,
+                      border: OutlineInputBorder(borderSide: BorderSide.none),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    ),
+                    dropdownColor: ColorTokens.surface,
+                    style: const TextStyle(
+                        fontSize: 13, color: ColorTokens.textPrimary),
+                    items: _bitRateChoices
+                        .map((br) => DropdownMenuItem<int?>(
+                              value: br,
+                              child: Text(br == null ? 'Unlimited' : '$br kbps'),
+                            ))
+                        .toList(),
+                    onChanged: (v) =>
+                        setState(() => _transcodeMaxBitRate = v),
+                  ),
+                ),
+              ],
 
               const SizedBox(height: 20),
               _SectionLabel('FILE OPTIONS'),

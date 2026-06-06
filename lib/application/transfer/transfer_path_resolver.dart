@@ -23,7 +23,9 @@ String buildSongPath(Song song, DeviceSettings settings) {
   final addYear = (forceYear || settings.includeYear) && year != null && year > 0;
   final albumFolder = _trunc(addYear ? '$year - $rawAlbum' : rawAlbum);
 
-  final ext = song.suffix ?? 'mp3';
+  // When transcoding, the file extension follows the target format rather
+  // than the source song's suffix (a FLAC sent as MP3 must be named .mp3).
+  final ext = settings.transcodeFormat.fileExtension ?? song.suffix ?? 'mp3';
   final trackNum = song.track;
   final disc = song.discNumber ?? 1;
   final prefix = switch (settings.filenameFormat) {

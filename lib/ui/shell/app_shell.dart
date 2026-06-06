@@ -13,12 +13,14 @@ import '../../core/theme/color_tokens.dart';
 import '../pages/albums/albums_page.dart';
 import '../pages/artists/artists_page.dart';
 import '../pages/device/device_page.dart';
+import '../pages/genres/genres_page.dart';
 import '../pages/lidarr/lidarr_page.dart';
 import '../pages/playlists/playlists_page.dart';
 import '../pages/search/search_page.dart';
 import '../pages/settings/settings_page.dart';
 import '../pages/setup/setup_page.dart';
 import '../pages/songs/songs_page.dart';
+import 'app_shortcuts.dart';
 import 'bottom_bar/bottom_bar_widget.dart';
 import 'sidebar/sidebar_widget.dart';
 
@@ -127,9 +129,10 @@ class AppShell extends ConsumerWidget {
             ),
       ],
     );
+    final body = Platform.isMacOS ? TitlebarSafeArea(child: stack) : stack;
     return Scaffold(
       backgroundColor: ColorTokens.background,
-      body: Platform.isMacOS ? TitlebarSafeArea(child: stack) : stack,
+      body: AppShortcuts(child: body),
     );
   }
 }
@@ -197,6 +200,8 @@ class _MainPanel extends ConsumerWidget {
         case SidebarSection.songs:
           ref.read(allSongsProvider.notifier).refresh();
           ref.invalidate(starredProvider); // pick up stars changed on other clients
+        case SidebarSection.genres:
+          ref.invalidate(genresProvider);
         default:
           break;
       }
@@ -213,6 +218,7 @@ class _MainPanel extends ConsumerWidget {
               SidebarSection.albums =>
                 const AlbumsPage(mode: AlbumsPageMode.all),
               SidebarSection.songs => const SongsPage(),
+              SidebarSection.genres => const GenresPage(),
               SidebarSection.playlists => const PlaylistsPage(),
               SidebarSection.lidarr => const LidarrPage(),
               SidebarSection.device => const DevicePage(),

@@ -17,6 +17,7 @@ class AlbumDto with _$AlbumDto {
     @JsonKey(name: 'songCount') @Default(0) int songCount,
     @Default(0) int duration,
     @JsonKey(name: 'song') @Default([]) List<SongDto> songs,
+    @JsonKey(name: 'userRating') int? userRating,
   }) = _AlbumDto;
 
   factory AlbumDto.fromJson(Map<String, dynamic> json) =>

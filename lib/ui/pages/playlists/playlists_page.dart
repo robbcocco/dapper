@@ -20,6 +20,7 @@ import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
+import '../../widgets/error_retry.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
 import '../../widgets/sync_dot.dart';
@@ -37,7 +38,10 @@ class PlaylistsPage extends ConsumerWidget {
     return playlists.when(
       data: (list) => _PlaylistList(playlists: list),
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (e, _) => ErrorRetry(
+        error: e,
+        onRetry: () => ref.invalidate(playlistsProvider),
+      ),
     );
   }
 }
@@ -181,7 +185,10 @@ class _PlaylistDetail extends ConsumerWidget {
         return _PlaylistContent(playlist: p);
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (e, _) => ErrorRetry(
+        error: e,
+        onRetry: () => ref.invalidate(playlistProvider(playlistId)),
+      ),
     );
   }
 }
@@ -371,7 +378,6 @@ class _PlaylistHeader extends ConsumerWidget {
     ref.read(transferQueueProvider.notifier).enqueuePlaylist(
           playlist,
           devicePath,
-          (id) => repo.downloadUri(id),
         );
   }
 

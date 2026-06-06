@@ -1,5 +1,7 @@
 import '../../domain/models/album.dart';
 import '../../domain/models/artist.dart';
+import '../../domain/models/genre.dart';
+import '../../domain/models/lyrics.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/search_results.dart';
 import '../../domain/models/song.dart';
@@ -133,6 +135,26 @@ class LibraryRepositoryImpl implements LibraryRepository {
   Future<Set<String>> getStarredSongIds() => _api.getStarredSongIds();
 
   @override
+  Future<void> setRating(String id, int rating) => _api.setRating(id, rating);
+
+  @override
+  Future<void> scrobble(String songId, {bool submission = true}) =>
+      _api.scrobble(songId, submission: submission);
+
+  @override
+  Future<Lyrics?> getLyrics(String songId) => _api.getLyrics(songId);
+
+  @override
+  Future<List<Genre>> getGenres() => _api.getGenres();
+
+  @override
+  Future<List<Album>> getAlbumsByGenre(String genre,
+          {int size = 500, int offset = 0}) async =>
+      (await _api.getAlbumsByGenre(genre, size: size, offset: offset))
+          .map(_mapAlbum)
+          .toList();
+
+  @override
   Uri coverArtUri(String coverArtId, {int size = 256}) =>
       _api.coverArtUri(coverArtId, size: size);
 
@@ -140,7 +162,8 @@ class LibraryRepositoryImpl implements LibraryRepository {
   Uri streamUri(String songId) => _api.streamUri(songId);
 
   @override
-  Uri downloadUri(String songId) => _api.downloadUri(songId);
+  Uri transferUri(String songId, {String? format, int? maxBitRate}) =>
+      _api.transferUri(songId, format: format, maxBitRate: maxBitRate);
 
   Artist _mapArtist(ArtistDto d) => Artist(
         id: d.id,
@@ -161,6 +184,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
         songCount: d.songCount,
         duration: d.duration,
         songs: d.songs.map((s) => _mapSong(s, fallbackAlbumArtist: d.artist)).toList(),
+        userRating: d.userRating,
       );
 
   Song _mapSong(SongDto d, {String? fallbackAlbumArtist}) => Song(
@@ -181,6 +205,7 @@ class LibraryRepositoryImpl implements LibraryRepository {
         year: d.year,
         genre: d.genre,
         albumArtist: d.albumArtist ?? fallbackAlbumArtist,
+        userRating: d.userRating,
       );
 
   Playlist _mapPlaylist(PlaylistDto d) => Playlist(

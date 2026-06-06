@@ -23,6 +23,8 @@ class SongDto with _$SongDto {
     int? year,
     String? genre,
     @JsonKey(name: 'albumArtist') String? albumArtist,
+    // Subsonic `userRating` (1-5) — present only when the user has rated.
+    @JsonKey(name: 'userRating') int? userRating,
   }) = _SongDto;
 
   factory SongDto.fromJson(Map<String, dynamic> json) =>

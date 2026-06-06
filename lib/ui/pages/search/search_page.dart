@@ -15,6 +15,7 @@ import '../../../domain/models/artist.dart';
 import '../../../domain/models/album.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
+import '../../widgets/error_retry.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
 
@@ -29,9 +30,10 @@ class SearchPage extends ConsumerWidget {
     final results = ref.watch(searchResultsProvider(query));
     return results.when(
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(
-          child: Text('$e',
-              style: const TextStyle(color: ColorTokens.textSecondary))),
+      error: (e, _) => ErrorRetry(
+        error: e,
+        onRetry: () => ref.invalidate(searchResultsProvider(query)),
+      ),
       data: (r) {
         if (r.isEmpty) {
           return Center(
@@ -305,7 +307,6 @@ Future<void> _showSearchAlbumMenu(
     ref.read(transferQueueProvider.notifier).enqueue(
           full.songs,
           devicePath,
-          repo.downloadUri,
           expectedAlbumSongCounts: expectedCounts,
         );
   }

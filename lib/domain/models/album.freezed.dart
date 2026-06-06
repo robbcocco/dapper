@@ -27,6 +27,7 @@ mixin _$Album {
   int get songCount => throw _privateConstructorUsedError;
   int get duration => throw _privateConstructorUsedError;
   List<Song> get songs => throw _privateConstructorUsedError;
+  int? get userRating => throw _privateConstructorUsedError;
 
   /// Create a copy of Album
   /// with the given fields replaced by the non-null parameter values.
@@ -50,6 +51,7 @@ abstract class $AlbumCopyWith<$Res> {
     int songCount,
     int duration,
     List<Song> songs,
+    int? userRating,
   });
 }
 
@@ -78,6 +80,7 @@ class _$AlbumCopyWithImpl<$Res, $Val extends Album>
     Object? songCount = null,
     Object? duration = null,
     Object? songs = null,
+    Object? userRating = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -121,6 +124,10 @@ class _$AlbumCopyWithImpl<$Res, $Val extends Album>
                 ? _value.songs
                 : songs // ignore: cast_nullable_to_non_nullable
                       as List<Song>,
+            userRating: freezed == userRating
+                ? _value.userRating
+                : userRating // ignore: cast_nullable_to_non_nullable
+                      as int?,
           )
           as $Val,
     );
@@ -146,6 +153,7 @@ abstract class _$$AlbumImplCopyWith<$Res> implements $AlbumCopyWith<$Res> {
     int songCount,
     int duration,
     List<Song> songs,
+    int? userRating,
   });
 }
 
@@ -173,6 +181,7 @@ class __$$AlbumImplCopyWithImpl<$Res>
     Object? songCount = null,
     Object? duration = null,
     Object? songs = null,
+    Object? userRating = freezed,
   }) {
     return _then(
       _$AlbumImpl(
@@ -216,6 +225,10 @@ class __$$AlbumImplCopyWithImpl<$Res>
             ? _value._songs
             : songs // ignore: cast_nullable_to_non_nullable
                   as List<Song>,
+        userRating: freezed == userRating
+            ? _value.userRating
+            : userRating // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }
@@ -235,6 +248,7 @@ class _$AlbumImpl implements _Album {
     this.songCount = 0,
     this.duration = 0,
     final List<Song> songs = const [],
+    this.userRating,
   }) : _songs = songs;
 
   @override
@@ -267,8 +281,11 @@ class _$AlbumImpl implements _Album {
   }
 
   @override
+  final int? userRating;
+
+  @override
   String toString() {
-    return 'Album(id: $id, name: $name, artistId: $artistId, artist: $artist, coverArtId: $coverArtId, year: $year, genre: $genre, songCount: $songCount, duration: $duration, songs: $songs)';
+    return 'Album(id: $id, name: $name, artistId: $artistId, artist: $artist, coverArtId: $coverArtId, year: $year, genre: $genre, songCount: $songCount, duration: $duration, songs: $songs, userRating: $userRating)';
   }
 
   @override
@@ -289,7 +306,9 @@ class _$AlbumImpl implements _Album {
                 other.songCount == songCount) &&
             (identical(other.duration, duration) ||
                 other.duration == duration) &&
-            const DeepCollectionEquality().equals(other._songs, _songs));
+            const DeepCollectionEquality().equals(other._songs, _songs) &&
+            (identical(other.userRating, userRating) ||
+                other.userRating == userRating));
   }
 
   @override
@@ -305,6 +324,7 @@ class _$AlbumImpl implements _Album {
     songCount,
     duration,
     const DeepCollectionEquality().hash(_songs),
+    userRating,
   );
 
   /// Create a copy of Album
@@ -328,6 +348,7 @@ abstract class _Album implements Album {
     final int songCount,
     final int duration,
     final List<Song> songs,
+    final int? userRating,
   }) = _$AlbumImpl;
 
   @override
@@ -350,6 +371,8 @@ abstract class _Album implements Album {
   int get duration;
   @override
   List<Song> get songs;
+  @override
+  int? get userRating;
 
   /// Create a copy of Album
   /// with the given fields replaced by the non-null parameter values.

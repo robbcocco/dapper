@@ -10,7 +10,9 @@ import '../../../application/transfer/transfer_queue_notifier.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/transfer_task.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/cover_art_image.dart';
+import '../../widgets/lyrics_dialog.dart';
 
 class BottomBarWidget extends StatelessWidget {
   const BottomBarWidget({super.key});
@@ -93,7 +95,7 @@ class _NowPlaying extends ConsumerWidget {
                 ],
               ),
             ),
-            if (song != null)
+            if (song != null) ...[
               GestureDetector(
                 onTap: () =>
                     ref.read(starredProvider.notifier).toggle(song.id),
@@ -108,6 +110,18 @@ class _NowPlaying extends ConsumerWidget {
                   ),
                 ),
               ),
+              GestureDetector(
+                onTap: () => showLyricsDialog(context, song),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Icon(
+                    Icons.lyrics_outlined,
+                    size: 14,
+                    color: ColorTokens.textSecondary.withValues(alpha: 0.6),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
     );
@@ -367,14 +381,11 @@ class _TransferButton extends ConsumerWidget {
         borderRadius: BorderRadius.circular(10),
         side: const BorderSide(color: ColorTokens.glassBorder),
       ),
-      items: [
+      items: const [
         PopupMenuItem(
           enabled: false,
           padding: EdgeInsets.zero,
-          child: _TransferPopupContent(
-            onClear: () =>
-                ref.read(transferQueueProvider.notifier).clearCompleted(),
-          ),
+          child: _TransferPopupContent(),
         ),
       ],
     );
@@ -382,15 +393,24 @@ class _TransferButton extends ConsumerWidget {
 }
 
 class _TransferPopupContent extends ConsumerWidget {
-  const _TransferPopupContent({required this.onClear});
-  final VoidCallback onClear;
+  const _TransferPopupContent();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasks = ref
-        .watch(transferQueueProvider)
-        .where((t) => t.status != TransferStatus.cancelled)
-        .toList();
+    final queue = ref.watch(transferQueueProvider);
+    final tasks =
+        queue.where((t) => t.status != TransferStatus.cancelled).toList();
+    final notifier = ref.read(transferQueueProvider.notifier);
+
+    final hasActive = queue.any((t) =>
+        t.status == TransferStatus.queued ||
+        t.status == TransferStatus.inProgress);
+    final hasFailed = queue.any((t) => t.status == TransferStatus.failed);
+    final hasFinished = queue.any((t) =>
+        t.status == TransferStatus.completed ||
+        t.status == TransferStatus.failed ||
+        t.status == TransferStatus.cancelled);
+    final isPaused = notifier.isAnyDevicePaused;
 
     return SizedBox(
       width: 300,
@@ -399,7 +419,7 @@ class _TransferPopupContent extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
+            padding: const EdgeInsets.fromLTRB(14, 8, 6, 6),
             child: Row(
               children: [
                 const Expanded(
@@ -412,17 +432,52 @@ class _TransferPopupContent extends ConsumerWidget {
                     ),
                   ),
                 ),
-                TextButton(
-                  onPressed: onClear,
-                  style: TextButton.styleFrom(
-                    foregroundColor: ColorTokens.accent,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    minimumSize: const Size(0, 28),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                if (hasActive || isPaused)
+                  _BulkIconButton(
+                    icon: isPaused ? Icons.play_arrow : Icons.pause,
+                    tooltip: isPaused ? 'Resume all' : 'Pause all',
+                    onPressed: isPaused
+                        ? notifier.resume
+                        : notifier.pause,
                   ),
-                  child: const Text('Clear done',
-                      style: TextStyle(fontSize: 11)),
-                ),
+                if (hasFailed)
+                  _BulkIconButton(
+                    icon: Icons.refresh,
+                    tooltip: 'Retry all failed',
+                    onPressed: notifier.retryAllFailed,
+                  ),
+                if (hasActive)
+                  _BulkIconButton(
+                    icon: Icons.cancel_outlined,
+                    tooltip: 'Cancel all',
+                    onPressed: () async {
+                      // showDialog reopens against the root navigator; the
+                      // popup menu may close itself but the confirm dialog
+                      // appears on top either way.
+                      final ok = await showConfirmDialog(
+                        context,
+                        title: 'Cancel all transfers?',
+                        message:
+                            'In-progress downloads will be aborted and queued '
+                            'transfers will be removed.',
+                        confirmLabel: 'Cancel all',
+                        destructive: true,
+                      );
+                      if (ok) notifier.cancelAll();
+                    },
+                  ),
+                if (hasFinished)
+                  TextButton(
+                    onPressed: notifier.clearCompleted,
+                    style: TextButton.styleFrom(
+                      foregroundColor: ColorTokens.accent,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(0, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text('Clear done',
+                        style: TextStyle(fontSize: 11)),
+                  ),
               ],
             ),
           ),
@@ -624,6 +679,34 @@ class _RepeatButton extends StatelessWidget {
       onPressed: onPressed,
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+    );
+  }
+}
+
+/// Small icon button used for bulk queue actions in the transfer popup /
+/// device page. The onPressed is nullable so we can disable an action
+/// (e.g. resume without a library repo) instead of removing it and
+/// shifting the row layout.
+class _BulkIconButton extends StatelessWidget {
+  const _BulkIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: Icon(icon, size: 14),
+      tooltip: tooltip,
+      color: ColorTokens.textSecondary,
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+      splashRadius: 14,
     );
   }
 }

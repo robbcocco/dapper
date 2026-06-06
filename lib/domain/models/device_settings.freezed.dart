@@ -24,6 +24,11 @@ mixin _$DeviceSettings {
   FilenameFormat get filenameFormat => throw _privateConstructorUsedError;
   bool get includeYear => throw _privateConstructorUsedError;
   bool get overwriteExisting => throw _privateConstructorUsedError;
+  TranscodeFormat get transcodeFormat => throw _privateConstructorUsedError;
+
+  /// kbps cap passed as `maxBitRate` to Subsonic. Null = no cap (server
+  /// decides). Only meaningful when [transcodeFormat] != original.
+  int? get transcodeMaxBitRate => throw _privateConstructorUsedError;
 
   /// Create a copy of DeviceSettings
   /// with the given fields replaced by the non-null parameter values.
@@ -47,6 +52,8 @@ abstract class $DeviceSettingsCopyWith<$Res> {
     FilenameFormat filenameFormat,
     bool includeYear,
     bool overwriteExisting,
+    TranscodeFormat transcodeFormat,
+    int? transcodeMaxBitRate,
   });
 }
 
@@ -72,6 +79,8 @@ class _$DeviceSettingsCopyWithImpl<$Res, $Val extends DeviceSettings>
     Object? filenameFormat = null,
     Object? includeYear = null,
     Object? overwriteExisting = null,
+    Object? transcodeFormat = null,
+    Object? transcodeMaxBitRate = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -103,6 +112,14 @@ class _$DeviceSettingsCopyWithImpl<$Res, $Val extends DeviceSettings>
                 ? _value.overwriteExisting
                 : overwriteExisting // ignore: cast_nullable_to_non_nullable
                       as bool,
+            transcodeFormat: null == transcodeFormat
+                ? _value.transcodeFormat
+                : transcodeFormat // ignore: cast_nullable_to_non_nullable
+                      as TranscodeFormat,
+            transcodeMaxBitRate: freezed == transcodeMaxBitRate
+                ? _value.transcodeMaxBitRate
+                : transcodeMaxBitRate // ignore: cast_nullable_to_non_nullable
+                      as int?,
           )
           as $Val,
     );
@@ -126,6 +143,8 @@ abstract class _$$DeviceSettingsImplCopyWith<$Res>
     FilenameFormat filenameFormat,
     bool includeYear,
     bool overwriteExisting,
+    TranscodeFormat transcodeFormat,
+    int? transcodeMaxBitRate,
   });
 }
 
@@ -150,6 +169,8 @@ class __$$DeviceSettingsImplCopyWithImpl<$Res>
     Object? filenameFormat = null,
     Object? includeYear = null,
     Object? overwriteExisting = null,
+    Object? transcodeFormat = null,
+    Object? transcodeMaxBitRate = freezed,
   }) {
     return _then(
       _$DeviceSettingsImpl(
@@ -181,6 +202,14 @@ class __$$DeviceSettingsImplCopyWithImpl<$Res>
             ? _value.overwriteExisting
             : overwriteExisting // ignore: cast_nullable_to_non_nullable
                   as bool,
+        transcodeFormat: null == transcodeFormat
+            ? _value.transcodeFormat
+            : transcodeFormat // ignore: cast_nullable_to_non_nullable
+                  as TranscodeFormat,
+        transcodeMaxBitRate: freezed == transcodeMaxBitRate
+            ? _value.transcodeMaxBitRate
+            : transcodeMaxBitRate // ignore: cast_nullable_to_non_nullable
+                  as int?,
       ),
     );
   }
@@ -197,6 +226,8 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
     this.filenameFormat = FilenameFormat.discTrack,
     this.includeYear = false,
     this.overwriteExisting = false,
+    this.transcodeFormat = TranscodeFormat.original,
+    this.transcodeMaxBitRate,
   }) : super._();
 
   @override
@@ -219,10 +250,18 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
   @override
   @JsonKey()
   final bool overwriteExisting;
+  @override
+  @JsonKey()
+  final TranscodeFormat transcodeFormat;
+
+  /// kbps cap passed as `maxBitRate` to Subsonic. Null = no cap (server
+  /// decides). Only meaningful when [transcodeFormat] != original.
+  @override
+  final int? transcodeMaxBitRate;
 
   @override
   String toString() {
-    return 'DeviceSettings(devicePath: $devicePath, musicRootFolder: $musicRootFolder, playlistFolder: $playlistFolder, folderStructure: $folderStructure, filenameFormat: $filenameFormat, includeYear: $includeYear, overwriteExisting: $overwriteExisting)';
+    return 'DeviceSettings(devicePath: $devicePath, musicRootFolder: $musicRootFolder, playlistFolder: $playlistFolder, folderStructure: $folderStructure, filenameFormat: $filenameFormat, includeYear: $includeYear, overwriteExisting: $overwriteExisting, transcodeFormat: $transcodeFormat, transcodeMaxBitRate: $transcodeMaxBitRate)';
   }
 
   @override
@@ -243,7 +282,11 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
             (identical(other.includeYear, includeYear) ||
                 other.includeYear == includeYear) &&
             (identical(other.overwriteExisting, overwriteExisting) ||
-                other.overwriteExisting == overwriteExisting));
+                other.overwriteExisting == overwriteExisting) &&
+            (identical(other.transcodeFormat, transcodeFormat) ||
+                other.transcodeFormat == transcodeFormat) &&
+            (identical(other.transcodeMaxBitRate, transcodeMaxBitRate) ||
+                other.transcodeMaxBitRate == transcodeMaxBitRate));
   }
 
   @override
@@ -256,6 +299,8 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
     filenameFormat,
     includeYear,
     overwriteExisting,
+    transcodeFormat,
+    transcodeMaxBitRate,
   );
 
   /// Create a copy of DeviceSettings
@@ -279,6 +324,8 @@ abstract class _DeviceSettings extends DeviceSettings {
     final FilenameFormat filenameFormat,
     final bool includeYear,
     final bool overwriteExisting,
+    final TranscodeFormat transcodeFormat,
+    final int? transcodeMaxBitRate,
   }) = _$DeviceSettingsImpl;
   const _DeviceSettings._() : super._();
 
@@ -296,6 +343,13 @@ abstract class _DeviceSettings extends DeviceSettings {
   bool get includeYear;
   @override
   bool get overwriteExisting;
+  @override
+  TranscodeFormat get transcodeFormat;
+
+  /// kbps cap passed as `maxBitRate` to Subsonic. Null = no cap (server
+  /// decides). Only meaningful when [transcodeFormat] != original.
+  @override
+  int? get transcodeMaxBitRate;
 
   /// Create a copy of DeviceSettings
   /// with the given fields replaced by the non-null parameter values.

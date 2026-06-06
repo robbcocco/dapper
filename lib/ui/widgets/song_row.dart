@@ -180,7 +180,7 @@ class SongRow extends ConsumerWidget {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo != null) {
         ref.read(transferQueueProvider.notifier)
-            .enqueue([song], devicePath, repo.downloadUri);
+            .enqueue([song], devicePath);
       }
     }
     if (result == 'playlist') onAddToPlaylist?.call();

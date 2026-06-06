@@ -1871,6 +1871,28 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _transcodeFormatMeta = const VerificationMeta(
+    'transcodeFormat',
+  );
+  @override
+  late final GeneratedColumn<String> transcodeFormat = GeneratedColumn<String>(
+    'transcode_format',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('original'),
+  );
+  static const VerificationMeta _transcodeMaxBitRateMeta =
+      const VerificationMeta('transcodeMaxBitRate');
+  @override
+  late final GeneratedColumn<int> transcodeMaxBitRate = GeneratedColumn<int>(
+    'transcode_max_bit_rate',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     devicePath,
@@ -1880,6 +1902,8 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
     filenameFormat,
     includeYear,
     overwriteExisting,
+    transcodeFormat,
+    transcodeMaxBitRate,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1955,6 +1979,24 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
         ),
       );
     }
+    if (data.containsKey('transcode_format')) {
+      context.handle(
+        _transcodeFormatMeta,
+        transcodeFormat.isAcceptableOrUnknown(
+          data['transcode_format']!,
+          _transcodeFormatMeta,
+        ),
+      );
+    }
+    if (data.containsKey('transcode_max_bit_rate')) {
+      context.handle(
+        _transcodeMaxBitRateMeta,
+        transcodeMaxBitRate.isAcceptableOrUnknown(
+          data['transcode_max_bit_rate']!,
+          _transcodeMaxBitRateMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1995,6 +2037,14 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
         DriftSqlType.bool,
         data['${effectivePrefix}overwrite_existing'],
       )!,
+      transcodeFormat: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}transcode_format'],
+      )!,
+      transcodeMaxBitRate: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}transcode_max_bit_rate'],
+      ),
     );
   }
 
@@ -2013,6 +2063,8 @@ class DeviceSettingsTableData extends DataClass
   final String filenameFormat;
   final bool includeYear;
   final bool overwriteExisting;
+  final String transcodeFormat;
+  final int? transcodeMaxBitRate;
   const DeviceSettingsTableData({
     required this.devicePath,
     required this.musicRootFolder,
@@ -2021,6 +2073,8 @@ class DeviceSettingsTableData extends DataClass
     required this.filenameFormat,
     required this.includeYear,
     required this.overwriteExisting,
+    required this.transcodeFormat,
+    this.transcodeMaxBitRate,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2032,6 +2086,10 @@ class DeviceSettingsTableData extends DataClass
     map['filename_format'] = Variable<String>(filenameFormat);
     map['include_year'] = Variable<bool>(includeYear);
     map['overwrite_existing'] = Variable<bool>(overwriteExisting);
+    map['transcode_format'] = Variable<String>(transcodeFormat);
+    if (!nullToAbsent || transcodeMaxBitRate != null) {
+      map['transcode_max_bit_rate'] = Variable<int>(transcodeMaxBitRate);
+    }
     return map;
   }
 
@@ -2044,6 +2102,10 @@ class DeviceSettingsTableData extends DataClass
       filenameFormat: Value(filenameFormat),
       includeYear: Value(includeYear),
       overwriteExisting: Value(overwriteExisting),
+      transcodeFormat: Value(transcodeFormat),
+      transcodeMaxBitRate: transcodeMaxBitRate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(transcodeMaxBitRate),
     );
   }
 
@@ -2060,6 +2122,10 @@ class DeviceSettingsTableData extends DataClass
       filenameFormat: serializer.fromJson<String>(json['filenameFormat']),
       includeYear: serializer.fromJson<bool>(json['includeYear']),
       overwriteExisting: serializer.fromJson<bool>(json['overwriteExisting']),
+      transcodeFormat: serializer.fromJson<String>(json['transcodeFormat']),
+      transcodeMaxBitRate: serializer.fromJson<int?>(
+        json['transcodeMaxBitRate'],
+      ),
     );
   }
   @override
@@ -2073,6 +2139,8 @@ class DeviceSettingsTableData extends DataClass
       'filenameFormat': serializer.toJson<String>(filenameFormat),
       'includeYear': serializer.toJson<bool>(includeYear),
       'overwriteExisting': serializer.toJson<bool>(overwriteExisting),
+      'transcodeFormat': serializer.toJson<String>(transcodeFormat),
+      'transcodeMaxBitRate': serializer.toJson<int?>(transcodeMaxBitRate),
     };
   }
 
@@ -2084,6 +2152,8 @@ class DeviceSettingsTableData extends DataClass
     String? filenameFormat,
     bool? includeYear,
     bool? overwriteExisting,
+    String? transcodeFormat,
+    Value<int?> transcodeMaxBitRate = const Value.absent(),
   }) => DeviceSettingsTableData(
     devicePath: devicePath ?? this.devicePath,
     musicRootFolder: musicRootFolder ?? this.musicRootFolder,
@@ -2092,6 +2162,10 @@ class DeviceSettingsTableData extends DataClass
     filenameFormat: filenameFormat ?? this.filenameFormat,
     includeYear: includeYear ?? this.includeYear,
     overwriteExisting: overwriteExisting ?? this.overwriteExisting,
+    transcodeFormat: transcodeFormat ?? this.transcodeFormat,
+    transcodeMaxBitRate: transcodeMaxBitRate.present
+        ? transcodeMaxBitRate.value
+        : this.transcodeMaxBitRate,
   );
   DeviceSettingsTableData copyWithCompanion(DeviceSettingsTableCompanion data) {
     return DeviceSettingsTableData(
@@ -2116,6 +2190,12 @@ class DeviceSettingsTableData extends DataClass
       overwriteExisting: data.overwriteExisting.present
           ? data.overwriteExisting.value
           : this.overwriteExisting,
+      transcodeFormat: data.transcodeFormat.present
+          ? data.transcodeFormat.value
+          : this.transcodeFormat,
+      transcodeMaxBitRate: data.transcodeMaxBitRate.present
+          ? data.transcodeMaxBitRate.value
+          : this.transcodeMaxBitRate,
     );
   }
 
@@ -2128,7 +2208,9 @@ class DeviceSettingsTableData extends DataClass
           ..write('folderStructure: $folderStructure, ')
           ..write('filenameFormat: $filenameFormat, ')
           ..write('includeYear: $includeYear, ')
-          ..write('overwriteExisting: $overwriteExisting')
+          ..write('overwriteExisting: $overwriteExisting, ')
+          ..write('transcodeFormat: $transcodeFormat, ')
+          ..write('transcodeMaxBitRate: $transcodeMaxBitRate')
           ..write(')'))
         .toString();
   }
@@ -2142,6 +2224,8 @@ class DeviceSettingsTableData extends DataClass
     filenameFormat,
     includeYear,
     overwriteExisting,
+    transcodeFormat,
+    transcodeMaxBitRate,
   );
   @override
   bool operator ==(Object other) =>
@@ -2153,7 +2237,9 @@ class DeviceSettingsTableData extends DataClass
           other.folderStructure == this.folderStructure &&
           other.filenameFormat == this.filenameFormat &&
           other.includeYear == this.includeYear &&
-          other.overwriteExisting == this.overwriteExisting);
+          other.overwriteExisting == this.overwriteExisting &&
+          other.transcodeFormat == this.transcodeFormat &&
+          other.transcodeMaxBitRate == this.transcodeMaxBitRate);
 }
 
 class DeviceSettingsTableCompanion
@@ -2165,6 +2251,8 @@ class DeviceSettingsTableCompanion
   final Value<String> filenameFormat;
   final Value<bool> includeYear;
   final Value<bool> overwriteExisting;
+  final Value<String> transcodeFormat;
+  final Value<int?> transcodeMaxBitRate;
   final Value<int> rowid;
   const DeviceSettingsTableCompanion({
     this.devicePath = const Value.absent(),
@@ -2174,6 +2262,8 @@ class DeviceSettingsTableCompanion
     this.filenameFormat = const Value.absent(),
     this.includeYear = const Value.absent(),
     this.overwriteExisting = const Value.absent(),
+    this.transcodeFormat = const Value.absent(),
+    this.transcodeMaxBitRate = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DeviceSettingsTableCompanion.insert({
@@ -2184,6 +2274,8 @@ class DeviceSettingsTableCompanion
     this.filenameFormat = const Value.absent(),
     this.includeYear = const Value.absent(),
     this.overwriteExisting = const Value.absent(),
+    this.transcodeFormat = const Value.absent(),
+    this.transcodeMaxBitRate = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : devicePath = Value(devicePath);
   static Insertable<DeviceSettingsTableData> custom({
@@ -2194,6 +2286,8 @@ class DeviceSettingsTableCompanion
     Expression<String>? filenameFormat,
     Expression<bool>? includeYear,
     Expression<bool>? overwriteExisting,
+    Expression<String>? transcodeFormat,
+    Expression<int>? transcodeMaxBitRate,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2204,6 +2298,9 @@ class DeviceSettingsTableCompanion
       if (filenameFormat != null) 'filename_format': filenameFormat,
       if (includeYear != null) 'include_year': includeYear,
       if (overwriteExisting != null) 'overwrite_existing': overwriteExisting,
+      if (transcodeFormat != null) 'transcode_format': transcodeFormat,
+      if (transcodeMaxBitRate != null)
+        'transcode_max_bit_rate': transcodeMaxBitRate,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2216,6 +2313,8 @@ class DeviceSettingsTableCompanion
     Value<String>? filenameFormat,
     Value<bool>? includeYear,
     Value<bool>? overwriteExisting,
+    Value<String>? transcodeFormat,
+    Value<int?>? transcodeMaxBitRate,
     Value<int>? rowid,
   }) {
     return DeviceSettingsTableCompanion(
@@ -2226,6 +2325,8 @@ class DeviceSettingsTableCompanion
       filenameFormat: filenameFormat ?? this.filenameFormat,
       includeYear: includeYear ?? this.includeYear,
       overwriteExisting: overwriteExisting ?? this.overwriteExisting,
+      transcodeFormat: transcodeFormat ?? this.transcodeFormat,
+      transcodeMaxBitRate: transcodeMaxBitRate ?? this.transcodeMaxBitRate,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2254,6 +2355,12 @@ class DeviceSettingsTableCompanion
     if (overwriteExisting.present) {
       map['overwrite_existing'] = Variable<bool>(overwriteExisting.value);
     }
+    if (transcodeFormat.present) {
+      map['transcode_format'] = Variable<String>(transcodeFormat.value);
+    }
+    if (transcodeMaxBitRate.present) {
+      map['transcode_max_bit_rate'] = Variable<int>(transcodeMaxBitRate.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2270,6 +2377,8 @@ class DeviceSettingsTableCompanion
           ..write('filenameFormat: $filenameFormat, ')
           ..write('includeYear: $includeYear, ')
           ..write('overwriteExisting: $overwriteExisting, ')
+          ..write('transcodeFormat: $transcodeFormat, ')
+          ..write('transcodeMaxBitRate: $transcodeMaxBitRate, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3183,6 +3292,8 @@ typedef $$DeviceSettingsTableTableCreateCompanionBuilder =
       Value<String> filenameFormat,
       Value<bool> includeYear,
       Value<bool> overwriteExisting,
+      Value<String> transcodeFormat,
+      Value<int?> transcodeMaxBitRate,
       Value<int> rowid,
     });
 typedef $$DeviceSettingsTableTableUpdateCompanionBuilder =
@@ -3194,6 +3305,8 @@ typedef $$DeviceSettingsTableTableUpdateCompanionBuilder =
       Value<String> filenameFormat,
       Value<bool> includeYear,
       Value<bool> overwriteExisting,
+      Value<String> transcodeFormat,
+      Value<int?> transcodeMaxBitRate,
       Value<int> rowid,
     });
 
@@ -3238,6 +3351,16 @@ class $$DeviceSettingsTableTableFilterComposer
 
   ColumnFilters<bool> get overwriteExisting => $composableBuilder(
     column: $table.overwriteExisting,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get transcodeFormat => $composableBuilder(
+    column: $table.transcodeFormat,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get transcodeMaxBitRate => $composableBuilder(
+    column: $table.transcodeMaxBitRate,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3285,6 +3408,16 @@ class $$DeviceSettingsTableTableOrderingComposer
     column: $table.overwriteExisting,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get transcodeFormat => $composableBuilder(
+    column: $table.transcodeFormat,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get transcodeMaxBitRate => $composableBuilder(
+    column: $table.transcodeMaxBitRate,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DeviceSettingsTableTableAnnotationComposer
@@ -3328,6 +3461,16 @@ class $$DeviceSettingsTableTableAnnotationComposer
 
   GeneratedColumn<bool> get overwriteExisting => $composableBuilder(
     column: $table.overwriteExisting,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get transcodeFormat => $composableBuilder(
+    column: $table.transcodeFormat,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get transcodeMaxBitRate => $composableBuilder(
+    column: $table.transcodeMaxBitRate,
     builder: (column) => column,
   );
 }
@@ -3382,6 +3525,8 @@ class $$DeviceSettingsTableTableTableManager
                 Value<String> filenameFormat = const Value.absent(),
                 Value<bool> includeYear = const Value.absent(),
                 Value<bool> overwriteExisting = const Value.absent(),
+                Value<String> transcodeFormat = const Value.absent(),
+                Value<int?> transcodeMaxBitRate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DeviceSettingsTableCompanion(
                 devicePath: devicePath,
@@ -3391,6 +3536,8 @@ class $$DeviceSettingsTableTableTableManager
                 filenameFormat: filenameFormat,
                 includeYear: includeYear,
                 overwriteExisting: overwriteExisting,
+                transcodeFormat: transcodeFormat,
+                transcodeMaxBitRate: transcodeMaxBitRate,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3402,6 +3549,8 @@ class $$DeviceSettingsTableTableTableManager
                 Value<String> filenameFormat = const Value.absent(),
                 Value<bool> includeYear = const Value.absent(),
                 Value<bool> overwriteExisting = const Value.absent(),
+                Value<String> transcodeFormat = const Value.absent(),
+                Value<int?> transcodeMaxBitRate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DeviceSettingsTableCompanion.insert(
                 devicePath: devicePath,
@@ -3411,6 +3560,8 @@ class $$DeviceSettingsTableTableTableManager
                 filenameFormat: filenameFormat,
                 includeYear: includeYear,
                 overwriteExisting: overwriteExisting,
+                transcodeFormat: transcodeFormat,
+                transcodeMaxBitRate: transcodeMaxBitRate,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

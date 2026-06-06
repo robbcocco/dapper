@@ -16,5 +16,6 @@ class Album with _$Album {
     @Default(0) int songCount,
     @Default(0) int duration,
     @Default([]) List<Song> songs,
+    int? userRating,
   }) = _Album;
 }

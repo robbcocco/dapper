@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/color_tokens.dart';
 import '../../domain/models/song.dart';
+import 'rating_stars.dart';
 
 Future<void> showSongMetadataDialog(BuildContext context, Song song) {
   return showDialog(
@@ -37,6 +38,24 @@ class _SongMetadataDialog extends StatelessWidget {
             if (s.discNumber != null) _Row('Disc', '${s.discNumber}'),
             if (s.duration != null)
               _Row('Duration', _fmt(s.duration!)),
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 6),
+              child: Row(
+                children: [
+                  const SizedBox(
+                    width: 80,
+                    child: Text('Rating',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: ColorTokens.textSecondary,
+                          letterSpacing: 0.3,
+                        )),
+                  ),
+                  RatingStars(id: s.id, fallback: s.userRating, size: 16),
+                ],
+              ),
+            ),
             const SizedBox(height: 12),
             Row(
               children: [

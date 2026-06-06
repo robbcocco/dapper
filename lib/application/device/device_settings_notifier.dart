@@ -30,6 +30,8 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
       filenameFormat: Value(settings.filenameFormat.name),
       includeYear: Value(settings.includeYear),
       overwriteExisting: Value(settings.overwriteExisting),
+      transcodeFormat: Value(settings.transcodeFormat.name),
+      transcodeMaxBitRate: Value(settings.transcodeMaxBitRate),
     ));
   }
 
@@ -47,6 +49,11 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
         ),
         includeYear: row.includeYear,
         overwriteExisting: row.overwriteExisting,
+        transcodeFormat: TranscodeFormat.values.firstWhere(
+          (e) => e.name == row.transcodeFormat,
+          orElse: () => TranscodeFormat.original,
+        ),
+        transcodeMaxBitRate: row.transcodeMaxBitRate,
       );
 }
 

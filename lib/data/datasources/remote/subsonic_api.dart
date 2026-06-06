@@ -1,5 +1,7 @@
 import '../../../core/constants/api_constants.dart';
 import '../../../core/errors/app_exception.dart';
+import '../../../domain/models/genre.dart';
+import '../../../domain/models/lyrics.dart';
 import '../../datasources/remote/dto/album_dto.dart';
 import '../../datasources/remote/dto/artist_dto.dart';
 import '../../datasources/remote/dto/playlist_dto.dart';
@@ -218,6 +220,119 @@ class SubsonicApi {
     await _client.get(ApiConstants.deletePlaylist, params: {'id': id});
   }
 
+  // ── Genres ────────────────────────────────────────────────────────────────
+
+  Future<List<Genre>> getGenres() async {
+    final response = await _client.get(ApiConstants.getGenres);
+    final genres = response['genres'] as Map<String, dynamic>?;
+    final list = genres?['genre'] as List<dynamic>? ?? const [];
+    final result = <Genre>[];
+    for (final raw in list) {
+      if (raw is! Map<String, dynamic>) continue;
+      // Subsonic uses `value` for the name; sometimes seen as `name` in
+      // older forks.
+      final name = (raw['value'] ?? raw['name']) as String?;
+      if (name == null || name.isEmpty) continue;
+      result.add(Genre(
+        name: name,
+        songCount: (raw['songCount'] as int?) ?? 0,
+        albumCount: (raw['albumCount'] as int?) ?? 0,
+      ));
+    }
+    return result;
+  }
+
+  Future<List<AlbumDto>> getAlbumsByGenre(String genre,
+      {int size = 500, int offset = 0}) async {
+    final response = await _client.get(
+      ApiConstants.getAlbumList2,
+      params: {
+        'type': 'byGenre',
+        'genre': genre,
+        'size': size,
+        'offset': offset,
+      },
+    );
+    final list = response['albumList2'] as Map<String, dynamic>?;
+    final albums = list?['album'] as List<dynamic>? ?? const [];
+    return albums
+        .whereType<Map<String, dynamic>>()
+        .map(AlbumDto.fromJson)
+        .toList();
+  }
+
+  // ── Lyrics ────────────────────────────────────────────────────────────────
+
+  /// Fetches lyrics for [songId]. Returns null when the server has none.
+  /// Handles both the modern structured response (with synced timestamps)
+  /// and older Subsonic forks that return a flat newline-joined string.
+  Future<Lyrics?> getLyrics(String songId) async {
+    final response =
+        await _client.get(ApiConstants.getLyricsBySongId, params: {'id': songId});
+
+    final list = response['lyricsList'] as Map<String, dynamic>?;
+    final structured = list?['structuredLyrics'] as List<dynamic>?;
+    if (structured != null && structured.isNotEmpty) {
+      final first = structured.first as Map<String, dynamic>;
+      final lineList = first['line'] as List<dynamic>? ?? const [];
+      final synced = first['synced'] == true;
+      final lines = <LyricsLine>[];
+      for (final raw in lineList) {
+        if (raw is! Map<String, dynamic>) continue;
+        final value = raw['value'];
+        if (value is! String) continue;
+        final start = raw['start'];
+        lines.add(LyricsLine(
+          text: value,
+          start: synced && start is int && start >= 0
+              ? Duration(milliseconds: start)
+              : null,
+        ));
+      }
+      if (lines.isEmpty) return null;
+      return Lyrics(
+        lines: lines,
+        synced: synced,
+        lang: first['lang'] as String?,
+      );
+    }
+
+    // Legacy fallback: { "lyrics": { "value": "Line 1\nLine 2..." } }
+    final legacy = response['lyrics'] as Map<String, dynamic>?;
+    final flat = legacy?['value'] as String?;
+    if (flat == null || flat.trim().isEmpty) return null;
+    final lines = flat
+        .split('\n')
+        .map((l) => LyricsLine(text: l))
+        .toList();
+    return Lyrics(lines: lines, synced: false);
+  }
+
+  // ── Ratings ───────────────────────────────────────────────────────────────
+
+  /// Sets the user rating for [id] (which can be a song, album, or artist).
+  /// Rating is 1-5 stars; pass 0 to clear an existing rating.
+  Future<void> setRating(String id, int rating) async {
+    assert(rating >= 0 && rating <= 5, 'rating must be 0-5');
+    await _client.get(ApiConstants.setRating, params: {
+      'id': id,
+      'rating': rating,
+    });
+  }
+
+  // ── Scrobbling ────────────────────────────────────────────────────────────
+
+  /// Sends a scrobble to Subsonic. The server forwards to Last.fm /
+  /// ListenBrainz when configured. Two modes per the Subsonic spec:
+  ///   - submission=false → "now playing" ping (track has just started).
+  ///   - submission=true  → full scrobble (track has been played enough).
+  Future<void> scrobble(String songId, {bool submission = true}) async {
+    await _client.get(ApiConstants.scrobble, params: {
+      'id': songId,
+      'submission': submission,
+    });
+  }
+
   // ── Starring ──────────────────────────────────────────────────────────────
 
   Future<void> star(String id) async {
@@ -251,6 +366,18 @@ class SubsonicApi {
   Uri streamUri(String songId) =>
       _client.buildUri(ApiConstants.stream, {'id': songId});
 
-  Uri downloadUri(String songId) =>
-      _client.buildUri(ApiConstants.download, {'id': songId});
+  /// URL used by the transfer engine. When [format] is null we hit
+  /// `/rest/download` so the server delivers the file untouched. When a
+  /// format is supplied we hit `/rest/stream`, which is the Subsonic spec's
+  /// transcoding endpoint and accepts `maxBitRate` + `format` query params.
+  Uri transferUri(String songId, {String? format, int? maxBitRate}) {
+    if (format == null) {
+      return _client.buildUri(ApiConstants.download, {'id': songId});
+    }
+    return _client.buildUri(ApiConstants.stream, {
+      'id': songId,
+      'format': format,
+      if (maxBitRate != null && maxBitRate > 0) 'maxBitRate': maxBitRate,
+    });
+  }
 }

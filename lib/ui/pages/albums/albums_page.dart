@@ -18,6 +18,7 @@ import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
+import '../../widgets/error_retry.dart';
 import '../../widgets/sync_dot.dart';
 import 'album_detail_page.dart';
 import 'album_info_dialog.dart';
@@ -48,9 +49,10 @@ class AlbumsPage extends ConsumerWidget {
       return albums.when(
         data: (list) => _AlbumGrid(albums: list),
         loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(
-            child: Text('$e',
-                style: const TextStyle(color: ColorTokens.textSecondary))),
+        error: (e, _) => ErrorRetry(
+          error: e,
+          onRetry: () => ref.invalidate(recentAlbumsProvider),
+        ),
       );
     }
 
@@ -174,10 +176,10 @@ class _ArtistAlbumsView extends ConsumerWidget {
                         style: TextStyle(color: ColorTokens.textSecondary)))
                 : _AlbumGrid(albums: list),
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(
-                child: Text('$e',
-                    style:
-                        const TextStyle(color: ColorTokens.textSecondary))),
+            error: (e, _) => ErrorRetry(
+              error: e,
+              onRetry: () => ref.invalidate(albumsByArtistProvider(artistId)),
+            ),
           ),
         ),
       ],
@@ -211,7 +213,7 @@ class _ArtistAlbumsView extends ConsumerWidget {
     if (allSongs.isEmpty) return;
     ref
         .read(transferQueueProvider.notifier)
-        .enqueue(allSongs, devicePath, repo.downloadUri,
+        .enqueue(allSongs, devicePath,
             expectedAlbumSongCounts: expectedCounts);
   }
 }
@@ -255,9 +257,10 @@ class _AllAlbumsViewState extends ConsumerState<_AllAlbumsView> {
       return const Center(child: CircularProgressIndicator());
     }
     if (s.error != null && s.albums.isEmpty) {
-      return Center(
-          child: Text('${s.error}',
-              style: const TextStyle(color: ColorTokens.textSecondary)));
+      return ErrorRetry(
+        error: s.error!,
+        onRetry: () => ref.read(allAlbumsProvider.notifier).refresh(),
+      );
     }
 
     return CustomScrollView(
@@ -493,7 +496,7 @@ class _AlbumCard extends ConsumerWidget {
       final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
       final expectedCounts = folder != null ? {folder: full.songCount} : null;
       ref.read(transferQueueProvider.notifier)
-          .enqueue(full.songs, devicePath, repo.downloadUri,
+          .enqueue(full.songs, devicePath,
               expectedAlbumSongCounts: expectedCounts);
     } else if (result == 'playlist') {
       final full = await ref.read(albumProvider(album.id).future);

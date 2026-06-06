@@ -14,6 +14,7 @@ import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
+import '../../widgets/error_retry.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
 import '../../widgets/sync_dot.dart';
@@ -56,7 +57,10 @@ class AlbumDetailPage extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, _) => Center(child: Text('$e')),
+      error: (e, _) => ErrorRetry(
+        error: e,
+        onRetry: () => ref.invalidate(albumProvider(albumId)),
+      ),
     );
   }
 }
@@ -199,7 +203,6 @@ class _AlbumHeader extends ConsumerWidget {
     ref.read(transferQueueProvider.notifier).enqueue(
           album.songs,
           devicePath,
-          (id) => repo.downloadUri(id),
           expectedAlbumSongCounts: expectedCounts,
         );
   }
