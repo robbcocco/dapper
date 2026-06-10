@@ -55,5 +55,25 @@ void main() {
       final long = 'a' * 500;
       expect(long.toSafeFilename().length, 500);
     });
+
+    test('prefixes Windows reserved device names', () {
+      // Windows rejects these even with an extension. Prefix with _ so the
+      // file can be created on FAT32/NTFS without the OS refusing.
+      expect('con'.toSafeFilename(), '_con');
+      expect('CON'.toSafeFilename(), '_CON');
+      expect('PRN'.toSafeFilename(), '_PRN');
+      expect('aux'.toSafeFilename(), '_aux');
+      expect('NUL'.toSafeFilename(), '_NUL');
+      expect('com1'.toSafeFilename(), '_com1');
+      expect('LPT9'.toSafeFilename(), '_LPT9');
+    });
+
+    test('leaves names that merely contain reserved tokens unchanged', () {
+      // Only an exact case-insensitive match should be prefixed; "Conrad" is
+      // a perfectly legal filename.
+      expect('Conrad'.toSafeFilename(), 'Conrad');
+      expect('COM10'.toSafeFilename(), 'COM10'); // only COM1-COM9 are reserved
+      expect('AUXILIARY'.toSafeFilename(), 'AUXILIARY');
+    });
   });
 }

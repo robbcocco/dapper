@@ -216,6 +216,22 @@ void addSongToManifest(String folderPath, Song song,
 
 Future<void> addSongToManifestAsync(String folderPath, Song song,
     {int? expectedSongCount, String? filename}) async {
+  await addSongsToManifestAsync(folderPath, [
+    (song: song, filename: filename),
+  ], expectedSongCount: expectedSongCount);
+}
+
+/// Reads the manifest once, replaces any existing entries by id, appends every
+/// new song, and writes once. Batches an arbitrary number of songs into a
+/// single read+write cycle — when a full album's worth of files land at once
+/// (zip extract), this is dramatically faster than calling
+/// [addSongToManifestAsync] per song.
+Future<void> addSongsToManifestAsync(
+  String folderPath,
+  List<({Song song, String? filename})> entries, {
+  int? expectedSongCount,
+}) async {
+  if (entries.isEmpty) return;
   final file = File(p.join(folderPath, _kManifestFilename));
   AlbumManifest? existing;
   if (await file.exists()) {
@@ -224,14 +240,18 @@ Future<void> addSongToManifestAsync(String folderPath, Song song,
           jsonDecode(await file.readAsString()) as Map<String, dynamic>);
     } catch (_) {}
   }
-  final songs = existing?.songs.where((s) => s.id != song.id).toList() ?? [];
-  songs.add(ManifestSong(
-    id: song.id,
-    title: song.title,
-    artist: song.albumArtist ?? song.artist,
-    album: song.album,
-    filename: filename,
-  ));
+  final newIds = {for (final e in entries) e.song.id};
+  final songs =
+      existing?.songs.where((s) => !newIds.contains(s.id)).toList() ?? [];
+  for (final e in entries) {
+    songs.add(ManifestSong(
+      id: e.song.id,
+      title: e.song.title,
+      artist: e.song.albumArtist ?? e.song.artist,
+      album: e.song.album,
+      filename: e.filename,
+    ));
+  }
   await _writeManifestAtomic(
     folderPath,
     AlbumManifest(

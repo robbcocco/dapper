@@ -17,7 +17,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -36,6 +36,18 @@ class AppDatabase extends _$AppDatabase {
                 deviceSettingsTable, deviceSettingsTable.transcodeFormat);
             await m.addColumn(
                 deviceSettingsTable, deviceSettingsTable.transcodeMaxBitRate);
+          }
+          if (from < 5) {
+            await m.addColumn(
+                deviceSettingsTable, deviceSettingsTable.useZipDownload);
+          }
+          if (from < 6) {
+            await m.addColumn(deviceSettingsTable,
+                deviceSettingsTable.customFilenameTemplate);
+          }
+          if (from < 7) {
+            await m.addColumn(deviceSettingsTable,
+                deviceSettingsTable.customFolderTemplate);
           }
         },
       );

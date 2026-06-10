@@ -8,6 +8,7 @@ import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/playlist_actions_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
+import '../../../application/library/song_selection_notifier.dart';
 import '../../../application/playback/playback_notifier.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/playlist_sync_writer.dart';
@@ -21,6 +22,8 @@ import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/error_retry.dart';
+import '../../widgets/select_all_shortcut.dart';
+import '../../widgets/selection_action_bar.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
 import '../../widgets/sync_dot.dart';
@@ -205,33 +208,56 @@ class _PlaylistContent extends ConsumerWidget {
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
     final isOnDevice =
         settings != null && playlistExistsOnDevice(playlist, settings);
+    final scopeKey = 'playlist:${playlist.id}';
 
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: _PlaylistHeader(
-            playlist: playlist,
-            device: device,
-            devices: devices,
-            settings: settings,
-            isOnDevice: isOnDevice,
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(songSelectionProvider.notifier).setScope(scopeKey);
+    });
+
+    return SelectAllShortcut(
+      scopeKey: scopeKey,
+      allSongs: playlist.songs,
+      child: Stack(
+        children: [
+          CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: _PlaylistHeader(
+                  playlist: playlist,
+                  device: device,
+                  devices: devices,
+                  settings: settings,
+                  isOnDevice: isOnDevice,
+                ),
+              ),
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) => _PlaylistSongRow(
+                    song: playlist.songs[i],
+                    allSongs: playlist.songs,
+                    index: i,
+                    playlistId: playlist.id,
+                    settings: settings,
+                    scopeKey: scopeKey,
+                  ),
+                  childCount: playlist.songs.length,
+                ),
+              ),
+              const SliverToBoxAdapter(
+                  child: SizedBox(height: AppConstants.scrollBottomInset)),
+            ],
           ),
-        ),
-        SliverList(
-          delegate: SliverChildBuilderDelegate(
-            (context, i) => _PlaylistSongRow(
-              song: playlist.songs[i],
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SelectionActionBar(
+              scopeKey: scopeKey,
               allSongs: playlist.songs,
-              index: i,
-              playlistId: playlist.id,
-              settings: settings,
             ),
-            childCount: playlist.songs.length,
           ),
-        ),
-        const SliverToBoxAdapter(
-            child: SizedBox(height: AppConstants.scrollBottomInset)),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -397,6 +423,7 @@ class _PlaylistSongRow extends ConsumerWidget {
     required this.index,
     required this.playlistId,
     required this.settings,
+    required this.scopeKey,
   });
 
   final Song song;
@@ -404,16 +431,30 @@ class _PlaylistSongRow extends ConsumerWidget {
   final int index;
   final String playlistId;
   final DeviceSettings? settings;
+  final String scopeKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final queue = ref.watch(transferQueueProvider);
-    final isActive = queue.any((t) =>
-        t.song.id == song.id && t.status == TransferStatus.inProgress);
-    final isQueued = !isActive &&
-        queue.any((t) =>
-            t.song.id == song.id && t.status == TransferStatus.queued);
+    // .select keeps this row from rebuilding on every status change
+    // anywhere in the queue — only this song's transitions matter.
+    final (isActive, isQueued) = ref.watch(
+      transferQueueProvider.select((q) {
+        var active = false;
+        var queued = false;
+        for (final t in q) {
+          if (t.song.id != song.id) continue;
+          if (t.status == TransferStatus.inProgress) {
+            active = true;
+            break;
+          }
+          if (t.status == TransferStatus.queued) queued = true;
+        }
+        return (active, !active && queued);
+      }),
+    );
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);
+    final isSelected = ref.watch(songSelectionProvider.select((s) =>
+        s.matches(scopeKey) && s.isSelected(song.id)));
 
     Widget? trailing;
     if (isActive || isQueued) {
@@ -435,10 +476,32 @@ class _PlaylistSongRow extends ConsumerWidget {
       song: song,
       index: index,
       showArtist: true,
+      selected: isSelected,
+      selectionScopeKey: scopeKey,
+      selectionAllSongs: allSongs,
       trailing: trailing,
       onTap: () => ref
           .read(playbackProvider.notifier)
           .playSong(song, queue: allSongs, index: index),
+      onTapWithModifiers: (mods) {
+        final notifier = ref.read(songSelectionProvider.notifier);
+        if (mods.hasRange) {
+          notifier.selectRange(scopeKey, allSongs, index);
+          return;
+        }
+        if (mods.hasToggle) {
+          notifier.toggle(scopeKey, song.id, index);
+          return;
+        }
+        final selection = ref.read(songSelectionProvider);
+        if (selection.matches(scopeKey) && !selection.isEmpty) {
+          notifier.selectOnly(scopeKey, song.id, index);
+          return;
+        }
+        ref
+            .read(playbackProvider.notifier)
+            .playSong(song, queue: allSongs, index: index);
+      },
       onAddToPlaylist: () =>
           showAddToPlaylistDialog(context, ref, [song.id]),
       onRemove: () => ref

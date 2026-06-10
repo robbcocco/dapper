@@ -371,10 +371,20 @@ class _TransferButton extends ConsumerWidget {
   }
 
   void _show(BuildContext context, WidgetRef ref, Offset pos) {
+    // Anchor the popup to the spinner icon — bottom-right corner of the
+    // popup lines up with the tap location (the icon), and the popup
+    // extends up-and-to-the-left from there.
+    const popupWidth = 300.0;
+    const popupHeight = 360.0;
+    final size = MediaQuery.sizeOf(context);
     showMenu<void>(
       context: context,
       position: RelativeRect.fromLTRB(
-          pos.dx - 296, pos.dy - 360, pos.dx + 4, pos.dy),
+        pos.dx - popupWidth,            // left edge of popup
+        pos.dy - popupHeight,           // top edge of popup
+        size.width - pos.dx,            // right inset from screen right
+        size.height - pos.dy,           // bottom inset from screen bottom
+      ),
       color: ColorTokens.surface,
       elevation: 10,
       shape: RoundedRectangleBorder(
@@ -414,8 +424,8 @@ class _TransferPopupContent extends ConsumerWidget {
 
     return SizedBox(
       width: 300,
+      height: 360,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
@@ -482,23 +492,20 @@ class _TransferPopupContent extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1, color: ColorTokens.glassBorder),
-          if (tasks.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              child: Text('No transfers',
-                  style: TextStyle(
-                      fontSize: 12, color: ColorTokens.textSecondary)),
-            )
-          else
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 280),
-              child: ListView.builder(
-                shrinkWrap: true,
-                padding: const EdgeInsets.only(bottom: 6),
-                itemCount: tasks.length,
-                itemBuilder: (_, i) => _TaskRow(task: tasks[i]),
-              ),
-            ),
+          Expanded(
+            child: tasks.isEmpty
+                ? const Center(
+                    child: Text('No transfers',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: ColorTokens.textSecondary)),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    itemCount: tasks.length,
+                    itemBuilder: (_, i) => _TaskRow(task: tasks[i]),
+                  ),
+          ),
         ],
       ),
     );

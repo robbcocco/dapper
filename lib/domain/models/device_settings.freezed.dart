@@ -30,6 +30,25 @@ mixin _$DeviceSettings {
   /// decides). Only meaningful when [transcodeFormat] != original.
   int? get transcodeMaxBitRate => throw _privateConstructorUsedError;
 
+  /// Bulk-download mode: fetches a single zip per album from
+  /// `/rest/download` and extracts locally instead of one HTTP request per
+  /// song. Only honoured when [transcodeFormat] is original — the bulk
+  /// endpoint does not accept transcoding parameters.
+  bool get useZipDownload => throw _privateConstructorUsedError;
+
+  /// Template string used when [filenameFormat] is [FilenameFormat.custom].
+  /// Supported tokens: `{track}`, `{disc}`, `{title}`, `{artist}`,
+  /// `{albumArtist}`, `{album}`, `{year}`. Numeric tokens accept a width
+  /// suffix: `{track:02}` → `01`, `{disc:02}` → `02`. The file extension is
+  /// always appended automatically — don't include `.ext` in the template.
+  String get customFilenameTemplate => throw _privateConstructorUsedError;
+
+  /// Template string used when [folderStructure] is [FolderStructure.custom].
+  /// Slashes separate path components; each component is sanitised
+  /// independently. Same tokens as [customFilenameTemplate], minus
+  /// `{title}` (a folder per song would defeat the purpose).
+  String get customFolderTemplate => throw _privateConstructorUsedError;
+
   /// Create a copy of DeviceSettings
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -54,6 +73,9 @@ abstract class $DeviceSettingsCopyWith<$Res> {
     bool overwriteExisting,
     TranscodeFormat transcodeFormat,
     int? transcodeMaxBitRate,
+    bool useZipDownload,
+    String customFilenameTemplate,
+    String customFolderTemplate,
   });
 }
 
@@ -81,6 +103,9 @@ class _$DeviceSettingsCopyWithImpl<$Res, $Val extends DeviceSettings>
     Object? overwriteExisting = null,
     Object? transcodeFormat = null,
     Object? transcodeMaxBitRate = freezed,
+    Object? useZipDownload = null,
+    Object? customFilenameTemplate = null,
+    Object? customFolderTemplate = null,
   }) {
     return _then(
       _value.copyWith(
@@ -120,6 +145,18 @@ class _$DeviceSettingsCopyWithImpl<$Res, $Val extends DeviceSettings>
                 ? _value.transcodeMaxBitRate
                 : transcodeMaxBitRate // ignore: cast_nullable_to_non_nullable
                       as int?,
+            useZipDownload: null == useZipDownload
+                ? _value.useZipDownload
+                : useZipDownload // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            customFilenameTemplate: null == customFilenameTemplate
+                ? _value.customFilenameTemplate
+                : customFilenameTemplate // ignore: cast_nullable_to_non_nullable
+                      as String,
+            customFolderTemplate: null == customFolderTemplate
+                ? _value.customFolderTemplate
+                : customFolderTemplate // ignore: cast_nullable_to_non_nullable
+                      as String,
           )
           as $Val,
     );
@@ -145,6 +182,9 @@ abstract class _$$DeviceSettingsImplCopyWith<$Res>
     bool overwriteExisting,
     TranscodeFormat transcodeFormat,
     int? transcodeMaxBitRate,
+    bool useZipDownload,
+    String customFilenameTemplate,
+    String customFolderTemplate,
   });
 }
 
@@ -171,6 +211,9 @@ class __$$DeviceSettingsImplCopyWithImpl<$Res>
     Object? overwriteExisting = null,
     Object? transcodeFormat = null,
     Object? transcodeMaxBitRate = freezed,
+    Object? useZipDownload = null,
+    Object? customFilenameTemplate = null,
+    Object? customFolderTemplate = null,
   }) {
     return _then(
       _$DeviceSettingsImpl(
@@ -210,6 +253,18 @@ class __$$DeviceSettingsImplCopyWithImpl<$Res>
             ? _value.transcodeMaxBitRate
             : transcodeMaxBitRate // ignore: cast_nullable_to_non_nullable
                   as int?,
+        useZipDownload: null == useZipDownload
+            ? _value.useZipDownload
+            : useZipDownload // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        customFilenameTemplate: null == customFilenameTemplate
+            ? _value.customFilenameTemplate
+            : customFilenameTemplate // ignore: cast_nullable_to_non_nullable
+                  as String,
+        customFolderTemplate: null == customFolderTemplate
+            ? _value.customFolderTemplate
+            : customFolderTemplate // ignore: cast_nullable_to_non_nullable
+                  as String,
       ),
     );
   }
@@ -228,6 +283,9 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
     this.overwriteExisting = false,
     this.transcodeFormat = TranscodeFormat.original,
     this.transcodeMaxBitRate,
+    this.useZipDownload = true,
+    this.customFilenameTemplate = '',
+    this.customFolderTemplate = '',
   }) : super._();
 
   @override
@@ -259,9 +317,34 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
   @override
   final int? transcodeMaxBitRate;
 
+  /// Bulk-download mode: fetches a single zip per album from
+  /// `/rest/download` and extracts locally instead of one HTTP request per
+  /// song. Only honoured when [transcodeFormat] is original — the bulk
+  /// endpoint does not accept transcoding parameters.
+  @override
+  @JsonKey()
+  final bool useZipDownload;
+
+  /// Template string used when [filenameFormat] is [FilenameFormat.custom].
+  /// Supported tokens: `{track}`, `{disc}`, `{title}`, `{artist}`,
+  /// `{albumArtist}`, `{album}`, `{year}`. Numeric tokens accept a width
+  /// suffix: `{track:02}` → `01`, `{disc:02}` → `02`. The file extension is
+  /// always appended automatically — don't include `.ext` in the template.
+  @override
+  @JsonKey()
+  final String customFilenameTemplate;
+
+  /// Template string used when [folderStructure] is [FolderStructure.custom].
+  /// Slashes separate path components; each component is sanitised
+  /// independently. Same tokens as [customFilenameTemplate], minus
+  /// `{title}` (a folder per song would defeat the purpose).
+  @override
+  @JsonKey()
+  final String customFolderTemplate;
+
   @override
   String toString() {
-    return 'DeviceSettings(devicePath: $devicePath, musicRootFolder: $musicRootFolder, playlistFolder: $playlistFolder, folderStructure: $folderStructure, filenameFormat: $filenameFormat, includeYear: $includeYear, overwriteExisting: $overwriteExisting, transcodeFormat: $transcodeFormat, transcodeMaxBitRate: $transcodeMaxBitRate)';
+    return 'DeviceSettings(devicePath: $devicePath, musicRootFolder: $musicRootFolder, playlistFolder: $playlistFolder, folderStructure: $folderStructure, filenameFormat: $filenameFormat, includeYear: $includeYear, overwriteExisting: $overwriteExisting, transcodeFormat: $transcodeFormat, transcodeMaxBitRate: $transcodeMaxBitRate, useZipDownload: $useZipDownload, customFilenameTemplate: $customFilenameTemplate, customFolderTemplate: $customFolderTemplate)';
   }
 
   @override
@@ -286,7 +369,13 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
             (identical(other.transcodeFormat, transcodeFormat) ||
                 other.transcodeFormat == transcodeFormat) &&
             (identical(other.transcodeMaxBitRate, transcodeMaxBitRate) ||
-                other.transcodeMaxBitRate == transcodeMaxBitRate));
+                other.transcodeMaxBitRate == transcodeMaxBitRate) &&
+            (identical(other.useZipDownload, useZipDownload) ||
+                other.useZipDownload == useZipDownload) &&
+            (identical(other.customFilenameTemplate, customFilenameTemplate) ||
+                other.customFilenameTemplate == customFilenameTemplate) &&
+            (identical(other.customFolderTemplate, customFolderTemplate) ||
+                other.customFolderTemplate == customFolderTemplate));
   }
 
   @override
@@ -301,6 +390,9 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
     overwriteExisting,
     transcodeFormat,
     transcodeMaxBitRate,
+    useZipDownload,
+    customFilenameTemplate,
+    customFolderTemplate,
   );
 
   /// Create a copy of DeviceSettings
@@ -326,6 +418,9 @@ abstract class _DeviceSettings extends DeviceSettings {
     final bool overwriteExisting,
     final TranscodeFormat transcodeFormat,
     final int? transcodeMaxBitRate,
+    final bool useZipDownload,
+    final String customFilenameTemplate,
+    final String customFolderTemplate,
   }) = _$DeviceSettingsImpl;
   const _DeviceSettings._() : super._();
 
@@ -350,6 +445,28 @@ abstract class _DeviceSettings extends DeviceSettings {
   /// decides). Only meaningful when [transcodeFormat] != original.
   @override
   int? get transcodeMaxBitRate;
+
+  /// Bulk-download mode: fetches a single zip per album from
+  /// `/rest/download` and extracts locally instead of one HTTP request per
+  /// song. Only honoured when [transcodeFormat] is original — the bulk
+  /// endpoint does not accept transcoding parameters.
+  @override
+  bool get useZipDownload;
+
+  /// Template string used when [filenameFormat] is [FilenameFormat.custom].
+  /// Supported tokens: `{track}`, `{disc}`, `{title}`, `{artist}`,
+  /// `{albumArtist}`, `{album}`, `{year}`. Numeric tokens accept a width
+  /// suffix: `{track:02}` → `01`, `{disc:02}` → `02`. The file extension is
+  /// always appended automatically — don't include `.ext` in the template.
+  @override
+  String get customFilenameTemplate;
+
+  /// Template string used when [folderStructure] is [FolderStructure.custom].
+  /// Slashes separate path components; each component is sanitised
+  /// independently. Same tokens as [customFilenameTemplate], minus
+  /// `{title}` (a folder per song would defeat the purpose).
+  @override
+  String get customFolderTemplate;
 
   /// Create a copy of DeviceSettings
   /// with the given fields replaced by the non-null parameter values.

@@ -267,10 +267,19 @@ String? _stripTrackPrefix(String filename, DeviceSettings settings) {
         return m != null ? filename.substring(m.end) : null;
       }(),
     FilenameFormat.none => filename,
+    // Custom templates may put arbitrary content before the title; no reliable
+    // strip pattern, fall back to returning the filename as-is.
+    FilenameFormat.custom => filename,
   };
 }
 
 String _filenameWithoutExt(Song song, DeviceSettings settings) {
+  if (settings.filenameFormat == FilenameFormat.custom) {
+    final rendered =
+        renderFilenameTemplate(settings.customFilenameTemplate, song);
+    final safe = rendered.toSafeFilename();
+    return safe.isEmpty ? song.title.toSafeFilename() : safe;
+  }
   final title = song.title.toSafeFilename();
   final trackNum = song.track;
   final disc = song.discNumber ?? 1;
@@ -280,6 +289,7 @@ String _filenameWithoutExt(Song song, DeviceSettings settings) {
       trackNum != null ? trackNum.toString().padLeft(2, '0') : '',
     FilenameFormat.discTrack =>
       trackNum != null ? '$disc-${trackNum.toString().padLeft(2, '0')}' : '',
+    FilenameFormat.custom => '', // unreachable, handled above
   };
   final sep =
       settings.filenameFormat == FilenameFormat.discTrack ? ' - ' : ' ';

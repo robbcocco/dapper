@@ -5,6 +5,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
+import '../../../application/library/song_selection_notifier.dart';
 import '../../../application/playback/playback_notifier.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_path_resolver.dart';
@@ -15,6 +16,8 @@ import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/error_retry.dart';
+import '../../widgets/select_all_shortcut.dart';
+import '../../widgets/selection_action_bar.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
 import '../../widgets/sync_dot.dart';
@@ -32,28 +35,52 @@ class AlbumDetailPage extends ConsumerWidget {
     return album.when(
       data: (a) {
         if (a == null) return const SizedBox.shrink();
-        return CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: _AlbumHeader(
-                album: a,
-                onBack: () =>
-                    ref.read(selectedAlbumIdProvider.notifier).state = null,
+        // Reset selection when navigating between albums.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ref.read(songSelectionProvider.notifier).setScope('album:${a.id}');
+        });
+        return SelectAllShortcut(
+          scopeKey: 'album:${a.id}',
+          allSongs: a.songs,
+          child: Stack(
+            children: [
+              CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(
+                    child: _AlbumHeader(
+                      album: a,
+                      onBack: () => ref
+                          .read(selectedAlbumIdProvider.notifier)
+                          .state = null,
+                    ),
+                  ),
+                  SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, i) => _AlbumSongRow(
+                        song: a.songs[i],
+                        allSongs: a.songs,
+                        index: i,
+                        scopeKey: 'album:${a.id}',
+                      ),
+                      childCount: a.songs.length,
+                    ),
+                  ),
+                  const SliverToBoxAdapter(
+                      child: SizedBox(
+                          height: AppConstants.scrollBottomInset)),
+                ],
               ),
-            ),
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, i) => _AlbumSongRow(
-                  song: a.songs[i],
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: SelectionActionBar(
+                  scopeKey: 'album:${a.id}',
                   allSongs: a.songs,
-                  index: i,
                 ),
-                childCount: a.songs.length,
               ),
-            ),
-            const SliverToBoxAdapter(
-                child: SizedBox(height: AppConstants.scrollBottomInset)),
-          ],
+            ],
+          ),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
@@ -198,6 +225,16 @@ class _AlbumHeader extends ConsumerWidget {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
     final settings = ref.read(deviceSettingsProvider(devicePath));
+    // Use bulk zip when enabled AND not transcoding (zip endpoint serves
+    // originals only). All other cases fall through to per-song.
+    if (settings.useZipDownload && !settings.isTranscoding) {
+      ref.read(transferQueueProvider.notifier).enqueueZipGroup(
+            album.id,
+            album.songs,
+            devicePath,
+          );
+      return;
+    }
     final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
     final expectedCounts = folder != null ? {folder: album.songCount} : null;
     ref.read(transferQueueProvider.notifier).enqueue(
@@ -215,11 +252,13 @@ class _AlbumSongRow extends ConsumerWidget {
     required this.song,
     required this.allSongs,
     required this.index,
+    required this.scopeKey,
   });
 
   final Song song;
   final List<Song> allSongs;
   final int index;
+  final String scopeKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -243,6 +282,8 @@ class _AlbumSongRow extends ConsumerWidget {
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
     final isOnDevice = settings != null && songExistsOnDevice(song, settings);
+    final isSelected = ref.watch(songSelectionProvider.select((s) =>
+        s.matches(scopeKey) && s.isSelected(song.id)));
 
     Widget? trailing;
     if (isActive || isQueued) {
@@ -262,10 +303,35 @@ class _AlbumSongRow extends ConsumerWidget {
 
     return SongRow(
       song: song,
+      selected: isSelected,
+      selectionScopeKey: scopeKey,
+      selectionAllSongs: allSongs,
       trailing: trailing,
       onTap: () => ref
           .read(playbackProvider.notifier)
           .playSong(song, queue: allSongs, index: index),
+      onTapWithModifiers: (mods) {
+        final notifier = ref.read(songSelectionProvider.notifier);
+        if (mods.hasRange) {
+          notifier.selectRange(scopeKey, allSongs, index);
+          return;
+        }
+        if (mods.hasToggle) {
+          notifier.toggle(scopeKey, song.id, index);
+          return;
+        }
+        // Plain tap. If there's an active selection in the same scope, plain
+        // tap collapses it back to a single row (Finder-style). Otherwise
+        // play the song as before.
+        final selection = ref.read(songSelectionProvider);
+        if (selection.matches(scopeKey) && !selection.isEmpty) {
+          notifier.selectOnly(scopeKey, song.id, index);
+          return;
+        }
+        ref
+            .read(playbackProvider.notifier)
+            .playSong(song, queue: allSongs, index: index);
+      },
       onAddToPlaylist: () =>
           showAddToPlaylistDialog(context, ref, [song.id]),
       onGetInfo: () => showSongMetadataDialog(context, song),

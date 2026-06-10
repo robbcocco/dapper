@@ -13,12 +13,14 @@ import '../../domain/models/device_settings.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/song.dart';
 import '../../domain/models/transfer_task.dart';
+import '../../platform/disk_space.dart';
 import '../device/device_settings_notifier.dart';
 import '../providers/providers.dart';
 import 'playlist_sync_writer.dart';
 import 'device_manifest.dart';
 import 'queue_persistence.dart';
 import 'transfer_path_resolver.dart';
+import 'zip_extractor.dart';
 
 class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   static const _uuid = Uuid();
@@ -50,6 +52,8 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   @override
   List<TransferTask> build() {
     final supportDir = ref.watch(appSupportDirProvider);
+    // Best-effort cleanup of stale zip temps left by a crash / forced quit.
+    _cleanZipTmp(supportDir);
     final raw = loadQueue(supportDir);
     final restored = raw
         .map((t) => t.status == TransferStatus.inProgress
@@ -153,7 +157,60 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     _startEngineForDevice(devicePath);
   }
 
+  /// Enqueues a bulk-zip job for an album or artist. Creates one [TransferTask]
+  /// per song so the UI shows per-song status, but tags them all with the same
+  /// [zipGroupId]. The first task is marked as leader by carrying
+  /// [zipSourceId] = sourceId (album or artist) — the engine routes the leader
+  /// through the zip-download branch and dispatches extracted files to its
+  /// siblings.
+  void enqueueZipGroup(
+    String sourceId,
+    List<Song> songs,
+    String devicePath,
+  ) {
+    if (songs.isEmpty) return;
+    // Dedupe: silently no-op when there's already a queued/inProgress zip
+    // group for this same source on this device. Stops rapid re-clicks of a
+    // Transfer button from creating parallel duplicate downloads.
+    final inFlight = state.any((t) =>
+        t.devicePath == devicePath &&
+        t.zipSourceId == sourceId &&
+        (t.status == TransferStatus.queued ||
+            t.status == TransferStatus.inProgress));
+    if (inFlight) return;
+    final groupId = _uuid.v4();
+    final newTasks = <TransferTask>[];
+    for (var i = 0; i < songs.length; i++) {
+      newTasks.add(TransferTask(
+        id: _uuid.v4(),
+        song: songs[i],
+        devicePath: devicePath,
+        zipGroupId: groupId,
+        zipSourceId: i == 0 ? sourceId : null,
+      ));
+    }
+    state = [...state, ...newTasks];
+    _startEngineForDevice(devicePath);
+  }
+
   void cancel(String taskId) {
+    final task = state.where((t) => t.id == taskId).firstOrNull;
+    // Cancelling any zip-group member cancels the whole group — the bulk
+    // download is a single HTTP request, so the natural unit of cancellation
+    // is the album, not the individual song row.
+    if (task != null && task.zipGroupId != null) {
+      final groupId = task.zipGroupId!;
+      for (final t in state.where((t) => t.zipGroupId == groupId)) {
+        _cancelTokens[t.id]?.cancel('User cancelled');
+      }
+      state = state
+          .map((t) => t.zipGroupId == groupId &&
+                  t.status != TransferStatus.completed
+              ? t.copyWith(status: TransferStatus.cancelled)
+              : t)
+          .toList();
+      return;
+    }
     _cancelTokens[taskId]?.cancel('User cancelled');
     state = state
         .map((t) =>
@@ -179,6 +236,11 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
   /// Re-queues every failed task; pass [devicePath] to scope it. Starts the
   /// engine once per affected device rather than once per task.
+  ///
+  /// Zip-group tagging is stripped on retry so the task runs as a plain
+  /// per-song download. Without this the engine's queue scan would never
+  /// pick up zip followers (which lack `zipSourceId`) and they'd sit
+  /// queued forever.
   void retryAllFailed({String? devicePath}) {
     final touchedDevices = <String>{};
     state = state.map((t) {
@@ -190,6 +252,8 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         errorMessage: null,
         bytesReceived: 0,
         totalBytes: 0,
+        zipGroupId: null,
+        zipSourceId: null,
       );
     }).toList();
     for (final d in touchedDevices) {
@@ -229,6 +293,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         .where((t) => t.id == taskId && t.status == TransferStatus.failed)
         .firstOrNull;
     if (task == null) return;
+    // Strip zip tagging on retry — see retryAllFailed for rationale.
     state = [
       for (final t in state)
         if (t.id == taskId)
@@ -236,7 +301,9 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
               status: TransferStatus.queued,
               errorMessage: null,
               bytesReceived: 0,
-              totalBytes: 0)
+              totalBytes: 0,
+              zipGroupId: null,
+              zipSourceId: null)
         else
           t,
     ];
@@ -266,11 +333,16 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     Completer<void>? slot; // completed whenever a task finishes
 
     while (true) {
-      final hasQueued = state.any((t) =>
-          t.devicePath == devicePath && t.status == TransferStatus.queued);
+      // "Ready" tasks: per-song tasks always count; zip-group tasks only count
+      // when they're the leader (followers wait for the leader to complete).
+      bool isReady(TransferTask t) =>
+          t.devicePath == devicePath &&
+          t.status == TransferStatus.queued &&
+          (!t.isZipMember || t.isZipLeader);
+      final hasReady = state.any(isReady);
       final paused = _pausedDevices.contains(devicePath);
 
-      if (!hasQueued && runningCount == 0 && !paused) break;
+      if (!hasReady && runningCount == 0 && !paused) break;
 
       // Paused with no in-flight: sleep on a fresh waker until resume() fires.
       if (paused && runningCount == 0) {
@@ -281,12 +353,8 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       }
 
       final concurrency = ref.read(appSettingsProvider).transferConcurrency;
-      if (hasQueued && runningCount < concurrency && !paused) {
-        final next = state
-            .where((t) =>
-                t.devicePath == devicePath &&
-                t.status == TransferStatus.queued)
-            .first;
+      if (hasReady && runningCount < concurrency && !paused) {
+        final next = state.firstWhere(isReady);
         runningCount++;
         // _executeTask marks next as inProgress synchronously before its first
         // await, so the next loop iteration won't pick the same task again.
@@ -308,6 +376,13 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   }
 
   Future<void> _executeTask(TransferTask task) async {
+    if (task.isZipLeader) {
+      return _executeZipAlbum(task);
+    }
+    return _executeSong(task);
+  }
+
+  Future<void> _executeSong(TransferTask task) async {
     _updateTask(task.id, (t) => t.copyWith(status: TransferStatus.inProgress));
 
     final cancelToken = CancelToken();
@@ -412,6 +487,350 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     }
   }
 
+  // ── Zip album path ─────────────────────────────────────────────────────────
+
+  /// Runs the bulk-zip flow for a [leader] task. Downloads `/rest/download?id=
+  /// {albumId}` once, streams the resulting zip onto disk, then extracts each
+  /// entry to its final target by matching against the sibling tasks in the
+  /// same zip group. Sibling tasks transition queued → completed as their
+  /// files land; on failure they all fail.
+  Future<void> _executeZipAlbum(TransferTask leader) async {
+    final groupId = leader.zipGroupId!;
+    final albumId = leader.zipSourceId!;
+    final devicePath = leader.devicePath;
+    final settings = ref.read(deviceSettingsProvider(devicePath));
+
+    // The zip endpoint always returns originals — transcoded modes must fall
+    // back to per-song. Convert siblings to plain tasks and bail out.
+    if (settings.isTranscoding) {
+      _convertGroupToSongTasks(groupId);
+      return;
+    }
+
+    final repo = ref.read(libraryRepositoryProvider);
+    if (repo == null) {
+      _failGroup(groupId, 'No active server');
+      return;
+    }
+
+    // Snapshot siblings (including leader) — these drive entry matching and
+    // collective completion. Captured up-front so state mutations during the
+    // run don't shift indices.
+    final groupTasks = state.where((t) => t.zipGroupId == groupId).toList();
+    final expectedSongs = groupTasks.map((t) => t.song).toList();
+
+    // Fully-on-device short-circuit: when every song's file is present at its
+    // target path and the user hasn't asked for overwrites, skip the HTTP
+    // round-trip + zip extraction entirely. Mark every sibling completed.
+    // Uses songFileExistsOnDevice (direct File.existsSync) so a stale
+    // manifest entry can't trick this into firing for an album whose files
+    // were manually deleted from the device.
+    if (!settings.overwriteExisting &&
+        expectedSongs.isNotEmpty &&
+        expectedSongs.every((s) => songFileExistsOnDevice(s, settings))) {
+      state = state
+          .map((t) => t.zipGroupId == groupId &&
+                  t.status != TransferStatus.completed
+              ? t.copyWith(status: TransferStatus.completed)
+              : t)
+          .toList();
+      return;
+    }
+
+    // Mark every member inProgress so the UI reflects the bulk operation.
+    state = state
+        .map((t) => t.zipGroupId == groupId &&
+                t.status == TransferStatus.queued
+            ? t.copyWith(status: TransferStatus.inProgress)
+            : t)
+        .toList();
+
+    final cancelToken = CancelToken();
+    _cancelTokens[leader.id] = cancelToken;
+
+    final supportDir = ref.read(appSupportDirProvider);
+    final tmpDir = Directory(p.join(supportDir, 'tmp'));
+    await tmpDir.create(recursive: true);
+    final tmpZip = File(p.join(tmpDir.path, 'zip_$groupId.zip'));
+
+    // Lifted out of the try so the finally block can scrub every group
+    // member's entry from transferProgressProvider on cancel / error paths.
+    final memberIds = groupTasks.map((t) => t.id).toList(growable: false);
+
+    try {
+      final estimatedTotal = expectedSongs
+          .map((s) => s.size ?? 0)
+          .fold<int>(0, (a, b) => a + b);
+      // Disk-free precheck: a multi-GB artist zip needs space for the .zip in
+      // the app-support tmp dir AND space for the extracted files on the
+      // device. We require ~1.1× the sum of song sizes on each volume so the
+      // user sees a clean error up-front rather than mid-download. Null means
+      // the platform query failed — fall back to letting Dio surface ENOSPC.
+      if (estimatedTotal > 0) {
+        final tmpFree = await freeBytesAt(supportDir);
+        final deviceFree = await freeBytesAt(devicePath);
+        // df can take ~50ms; if the user cancelled in that window the rest
+        // of this function would otherwise march ahead and start a download.
+        if (cancelToken.isCancelled) {
+          state = state
+              .map((t) => t.zipGroupId == groupId &&
+                      (t.status == TransferStatus.queued ||
+                          t.status == TransferStatus.inProgress)
+                  ? t.copyWith(status: TransferStatus.cancelled)
+                  : t)
+              .toList();
+          return;
+        }
+        final required = (estimatedTotal * 11) ~/ 10;
+        if (tmpFree != null && tmpFree < required) {
+          _failGroup(groupId,
+              'Not enough free space in app data for ${_bytesHuman(required)} '
+              'zip (${_bytesHuman(tmpFree)} available)');
+          return;
+        }
+        if (deviceFree != null && deviceFree < required) {
+          _failGroup(groupId,
+              'Not enough free space on device for ${_bytesHuman(required)} '
+              '(${_bytesHuman(deviceFree)} available)');
+          return;
+        }
+      }
+
+      final url = repo.zipUri(albumId).toString();
+      // memberIds (lifted above the try) drives the mirrored progress writes
+      // so every sibling's bar advances in step with the leader. Without
+      // mirroring, only the leader's row had a moving bar.
+      await _dio.download(
+        url,
+        tmpZip.path,
+        cancelToken: cancelToken,
+        onReceiveProgress: (received, total) {
+          final effectiveTotal = total > 0 ? total : estimatedTotal;
+          if (effectiveTotal <= 0) return;
+          final now = DateTime.now().millisecondsSinceEpoch;
+          if ((now - (_lastProgressMs[leader.id] ?? 0)) < 200) return;
+          _lastProgressMs[leader.id] = now;
+          final clamped =
+              received > effectiveTotal ? effectiveTotal : received;
+          ref.read(transferProgressProvider.notifier).update((m) {
+            final next = Map<String, (int, int)>.of(m);
+            final tuple = (clamped, effectiveTotal);
+            for (final id in memberIds) {
+              next[id] = tuple;
+            }
+            return next;
+          });
+        },
+      );
+      // Drop the mirrored progress entries before extract phase — siblings
+      // transition to "completed" individually as their files land.
+      ref.read(transferProgressProvider.notifier).update((m) {
+        final next = Map<String, (int, int)>.of(m);
+        for (final id in memberIds) {
+          next.remove(id);
+        }
+        return next;
+      });
+
+      // Run extraction in a background isolate so decompression doesn't
+      // block the UI. Use `compute` (top-level function reference) instead
+      // of `Isolate.run` (closure) — Flutter macOS AOT builds reject the
+      // closure-transfer protocol with "Invalid argument(s): Illegal
+      // argument in isolate". Inputs / outputs are passed as plain Map /
+      // List / primitives — see extractAlbumZipMarshalled.
+      final args = <String, dynamic>{
+        'zipPath': tmpZip.path,
+        'songs': [for (final s in expectedSongs) songToMap(s)],
+        'settings': settingsToMap(settings),
+        'removeMacosSidecars': Platform.isMacOS,
+      };
+      final raw = await compute(extractAlbumZipMarshalled, args);
+
+      final skipped = List<String>.from(raw['skipped'] as List);
+      for (final reason in skipped) {
+        dev.log('zip: $reason');
+      }
+      final extractedRaw = (raw['extracted'] as List).cast<Map>();
+      final result = ZipExtractResult(
+        extracted: [
+          for (final m in extractedRaw)
+            ExtractedSong(
+              songId: m['songId'] as String,
+              targetPath: m['targetPath'] as String,
+              expectedCount: m['expectedCount'] as int?,
+            ),
+        ],
+        skipped: skipped,
+      );
+
+      // Apply per-extracted updates on the main isolate (Riverpod state +
+      // manifest writes can't cross isolates).
+      //
+      // Batched on purpose:
+      //   * state mutation: one .map() pass that resolves every task's new
+      //     status, instead of N `_updateTask` calls each doing its own pass.
+      //     That collapses O(N²) work into O(N).
+      //   * manifests: grouped per album folder so we read+write each
+      //     folder's `.dapper.json` once, no matter how many songs landed
+      //     into it.
+
+      if (cancelToken.isCancelled) {
+        state = state
+            .map((t) => t.zipGroupId == groupId &&
+                    (t.status == TransferStatus.queued ||
+                        t.status == TransferStatus.inProgress)
+                ? t.copyWith(status: TransferStatus.cancelled)
+                : t)
+            .toList();
+        return;
+      }
+
+      // Collect per-folder manifest payloads and per-task status outcomes
+      // before mutating state.
+      final byFolder =
+          <String, List<({Song song, String filename})>>{};
+      final completedIds = <String>{};
+      final folderExpected = <String, int?>{};
+      for (final item in result.extracted) {
+        final sibling = groupTasks
+            .firstWhere((t) => t.song.id == item.songId);
+        completedIds.add(sibling.id);
+        final folder = p.dirname(item.targetPath);
+        byFolder
+            .putIfAbsent(folder, () => [])
+            .add((song: sibling.song, filename: p.basename(item.targetPath)));
+        folderExpected[folder] = item.expectedCount;
+      }
+
+      // Any sibling not matched by an entry → failed. Surface per-write
+      // failures (e.g. corrupt entry) in the task's error message instead of
+      // a generic "Not found" so the user can tell apart actual misses from
+      // extraction errors.
+      final writeFailures = <String>{};
+      for (final reason in result.skipped) {
+        if (reason.startsWith('write failed')) {
+          writeFailures.add(reason);
+        }
+      }
+      final failedIdToMessage = <String, String>{};
+      for (final t in groupTasks) {
+        if (result.matchedSongIds.contains(t.song.id)) continue;
+        if (t.status == TransferStatus.completed) continue;
+        final perEntryError = writeFailures.firstWhere(
+          (r) => r.contains(t.song.title),
+          orElse: () => '',
+        );
+        failedIdToMessage[t.id] =
+            perEntryError.isNotEmpty ? perEntryError : 'Not found in album zip';
+      }
+
+      // Single state mutation for the whole group.
+      state = state.map((t) {
+        if (completedIds.contains(t.id)) {
+          return t.copyWith(status: TransferStatus.completed);
+        }
+        final failMsg = failedIdToMessage[t.id];
+        if (failMsg != null) {
+          return t.copyWith(
+              status: TransferStatus.failed, errorMessage: failMsg);
+        }
+        return t;
+      }).toList();
+
+      // Per-folder manifest write — one read+write each, regardless of N.
+      for (final entry in byFolder.entries) {
+        _appendManifestBatch(entry.key, entry.value,
+            expectedSongCount: folderExpected[entry.key]);
+      }
+    } on DioException catch (e) {
+      if (CancelToken.isCancel(e)) {
+        state = state
+            .map((t) => t.zipGroupId == groupId &&
+                    (t.status == TransferStatus.queued ||
+                        t.status == TransferStatus.inProgress)
+                ? t.copyWith(status: TransferStatus.cancelled)
+                : t)
+            .toList();
+        return;
+      }
+      _failGroup(groupId, e.message ?? 'Download failed');
+    } catch (e) {
+      _failGroup(groupId, e.toString());
+    } finally {
+      _cancelTokens.remove(leader.id);
+      _lastProgressMs.remove(leader.id);
+      // Scrub every mirrored sibling entry (not just the leader) so failed /
+      // cancelled groups don't leave stale progress tuples in the provider.
+      ref.read(transferProgressProvider.notifier).update((m) {
+        Map<String, (int, int)>? next;
+        for (final id in memberIds) {
+          if (m.containsKey(id)) {
+            next ??= Map.of(m);
+            next.remove(id);
+          }
+        }
+        return next ?? m;
+      });
+      if (await tmpZip.exists()) {
+        try {
+          await tmpZip.delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  String _bytesHuman(int bytes) {
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+
+  void _failGroup(String groupId, String message) {
+    state = state
+        .map((t) => t.zipGroupId == groupId &&
+                t.status != TransferStatus.completed &&
+                t.status != TransferStatus.cancelled
+            ? t.copyWith(
+                status: TransferStatus.failed,
+                errorMessage: message,
+              )
+            : t)
+        .toList();
+  }
+
+  /// Strips zip-group tagging from every task in [groupId] so the engine
+  /// falls back to the per-song path. Used when the device is in transcoding
+  /// mode (the zip endpoint can't honour `format` / `maxBitRate`).
+  void _convertGroupToSongTasks(String groupId) {
+    state = state
+        .map((t) => t.zipGroupId == groupId
+            ? t.copyWith(zipGroupId: null, zipSourceId: null)
+            : t)
+        .toList();
+  }
+
+  /// Deletes leftover `tmp/zip_*.zip` files from a previous run that didn't
+  /// reach the finally block — typically a crash or forced quit.
+  void _cleanZipTmp(String supportDir) {
+    try {
+      final tmpDir = Directory(p.join(supportDir, 'tmp'));
+      if (!tmpDir.existsSync()) return;
+      for (final entity in tmpDir.listSync()) {
+        if (entity is! File) continue;
+        final name = p.basename(entity.path);
+        if (name.startsWith('zip_') && name.endsWith('.zip')) {
+          try {
+            entity.deleteSync();
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+  }
+
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   // Decrements the playlist song counter for this task; writes the M3U once
@@ -447,6 +866,25 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     final prev = _manifestFutures[folderPath] ?? Future.value();
     final next = prev.then((_) => addSongToManifestAsync(folderPath, song,
         expectedSongCount: expectedSongCount, filename: filename));
+    _manifestFutures[folderPath] = next;
+    next.whenComplete(() {
+      if (_manifestFutures[folderPath] == next) _manifestFutures.remove(folderPath);
+    });
+  }
+
+  /// Batches a folder's worth of new songs into a single manifest read+write.
+  /// The zip-extract path lands every album's songs together, so without this
+  /// we'd serialise N read+write cycles to one folder. One write does it.
+  void _appendManifestBatch(
+    String folderPath,
+    List<({Song song, String filename})> entries, {
+    int? expectedSongCount,
+  }) {
+    if (entries.isEmpty) return;
+    final prev = _manifestFutures[folderPath] ?? Future.value();
+    final next = prev.then((_) => addSongsToManifestAsync(folderPath,
+        [for (final e in entries) (song: e.song, filename: e.filename)],
+        expectedSongCount: expectedSongCount));
     _manifestFutures[folderPath] = next;
     next.whenComplete(() {
       if (_manifestFutures[folderPath] == next) _manifestFutures.remove(folderPath);

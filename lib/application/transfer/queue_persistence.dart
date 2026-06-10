@@ -44,6 +44,8 @@ Map<String, dynamic> _taskToJson(TransferTask t) => {
       'devicePath': t.devicePath,
       'status': t.status.name,
       if (t.errorMessage != null) 'errorMessage': t.errorMessage,
+      if (t.zipGroupId != null) 'zipGroupId': t.zipGroupId,
+      if (t.zipSourceId != null) 'zipSourceId': t.zipSourceId,
     };
 
 TransferTask _taskFromJson(Map<String, dynamic> j) {
@@ -60,6 +62,8 @@ TransferTask _taskFromJson(Map<String, dynamic> j) {
     devicePath: j['devicePath'] as String,
     status: status,
     errorMessage: j['errorMessage'] as String?,
+    zipGroupId: j['zipGroupId'] as String?,
+    zipSourceId: j['zipSourceId'] as String?,
   );
 }
 

@@ -129,6 +129,10 @@ Map<String, ArtistSyncStatus> _runScan({
       }
 
     case FolderStructure.flat:
+    case FolderStructure.custom:
+      // Custom templates can route songs anywhere; no reliable artist-folder
+      // shortcut. Sync status falls back to the per-album manifest scan
+      // performed by the regular albumSyncOnDevice path.
       break;
   }
 

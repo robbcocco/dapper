@@ -574,6 +574,7 @@ class _DeviceSettingsTile extends StatelessWidget {
         FolderStructure.artistAlbumYear => 'Artist / Year - Album',
         FolderStructure.artistOnly => 'Artist',
         FolderStructure.flat => 'Flat',
+        FolderStructure.custom => 'Custom',
       };
 }
 

@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../application/device/device_settings_notifier.dart';
+import '../../../application/transfer/transfer_path_resolver.dart';
+import '../../../core/extensions/string_extensions.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/device_settings.dart';
+import '../../../domain/models/song.dart';
+import 'device_folder_picker_dialog.dart';
 
 class DeviceSettingsDialog extends ConsumerStatefulWidget {
   const DeviceSettingsDialog({super.key, required this.devicePath});
@@ -28,12 +32,15 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
 
   late TextEditingController _rootCtrl;
   late TextEditingController _playlistCtrl;
+  late TextEditingController _customTemplateCtrl;
+  late TextEditingController _customFolderCtrl;
   late FolderStructure _folderStructure;
   late FilenameFormat _filenameFormat;
   late bool _includeYear;
   late bool _overwriteExisting;
   late TranscodeFormat _transcodeFormat;
   late int? _transcodeMaxBitRate;
+  late bool _useZipDownload;
 
   @override
   void initState() {
@@ -47,16 +54,48 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
     _overwriteExisting = settings.overwriteExisting;
     _transcodeFormat = settings.transcodeFormat;
     _transcodeMaxBitRate = settings.transcodeMaxBitRate;
+    _useZipDownload = settings.useZipDownload;
+    _customTemplateCtrl =
+        TextEditingController(text: settings.customFilenameTemplate);
+    _customFolderCtrl =
+        TextEditingController(text: settings.customFolderTemplate);
   }
 
   @override
   void dispose() {
     _rootCtrl.dispose();
     _playlistCtrl.dispose();
+    _customTemplateCtrl.dispose();
+    _customFolderCtrl.dispose();
     super.dispose();
   }
 
   void _save() {
+    final rootError = validateMusicRootPath(_rootCtrl.text);
+    if (rootError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Music root: $rootError')),
+      );
+      return;
+    }
+    if (_filenameFormat == FilenameFormat.custom) {
+      final tplError = validateFilenameTemplate(_customTemplateCtrl.text);
+      if (tplError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Filename template: $tplError')),
+        );
+        return;
+      }
+    }
+    if (_folderStructure == FolderStructure.custom) {
+      final tplError = validateFolderTemplate(_customFolderCtrl.text);
+      if (tplError != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Folder template: $tplError')),
+        );
+        return;
+      }
+    }
     ref.read(deviceSettingsProvider(widget.devicePath).notifier).save(
           DeviceSettings(
             devicePath: widget.devicePath,
@@ -71,6 +110,12 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
             transcodeMaxBitRate: _transcodeFormat == TranscodeFormat.original
                 ? null
                 : _transcodeMaxBitRate,
+            // Bulk-zip mode is only honoured for original-format transfers;
+            // persist the user's choice regardless so they don't lose it on a
+            // round-trip through transcoded mode.
+            useZipDownload: _useZipDownload,
+            customFilenameTemplate: _customTemplateCtrl.text.trim(),
+            customFolderTemplate: _customFolderCtrl.text.trim(),
           ),
         );
     Navigator.of(context).pop();
@@ -82,13 +127,15 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
       backgroundColor: ColorTokens.surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
+        constraints:
+            const BoxConstraints(maxWidth: 480, maxHeight: 720),
         child: Padding(
           padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               const Text(
                 'Device Settings',
                 style: TextStyle(
@@ -101,18 +148,15 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
 
               _SectionLabel('FOLDERS'),
               const SizedBox(height: 8),
-              _SettingRow(
-                label: 'Music root folder',
-                hint: 'Leave empty to use device root',
-                child: _TextField(
-                  controller: _rootCtrl,
-                  hint: 'e.g. Music',
-                ),
+              _MusicRootField(
+                controller: _rootCtrl,
+                devicePath: widget.devicePath,
+                onChanged: () => setState(() {}),
               ),
               const SizedBox(height: 12),
               _SettingRow(
                 label: 'Playlist folder',
-                hint: 'Relative to music root',
+                hint: 'Relative to device root (not music root)',
                 child: _TextField(
                   controller: _playlistCtrl,
                   hint: 'e.g. Playlists',
@@ -131,6 +175,7 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                     (FolderStructure.artistAlbumYear, 'Artist / Year - Album / track'),
                     (FolderStructure.artistOnly, 'Artist / track'),
                     (FolderStructure.flat, 'Flat (all files in music root)'),
+                    (FolderStructure.custom, 'Custom template'),
                   ].map(
                     (entry) => RadioListTile<FolderStructure>(
                       value: entry.$1,
@@ -144,6 +189,13 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                   ).toList(),
                 ),
               ),
+              if (_folderStructure == FolderStructure.custom) ...[
+                const SizedBox(height: 4),
+                _CustomFolderField(
+                  controller: _customFolderCtrl,
+                  onChanged: () => setState(() {}),
+                ),
+              ],
 
               const SizedBox(height: 20),
               _SectionLabel('FILENAME FORMAT'),
@@ -156,6 +208,7 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                     (FilenameFormat.discTrack, '1-01 - Title  (disc · track · title)'),
                     (FilenameFormat.track,     '01 Title  (track · title)'),
                     (FilenameFormat.none,      'Title  (no prefix)'),
+                    (FilenameFormat.custom,    'Custom template'),
                   ].map(
                     (entry) => RadioListTile<FilenameFormat>(
                       value: entry.$1,
@@ -169,6 +222,13 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                   ).toList(),
                 ),
               ),
+              if (_filenameFormat == FilenameFormat.custom) ...[
+                const SizedBox(height: 4),
+                _CustomTemplateField(
+                  controller: _customTemplateCtrl,
+                  onChanged: () => setState(() {}),
+                ),
+              ],
 
               const SizedBox(height: 20),
               _SectionLabel('TRANSCODING'),
@@ -245,6 +305,22 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                 value: _overwriteExisting,
                 onChanged: (v) => setState(() => _overwriteExisting = v),
               ),
+              _Switch(
+                label: 'Bulk album download (zip, faster)',
+                value: _useZipDownload,
+                onChanged: _transcodeFormat == TranscodeFormat.original
+                    ? (v) => setState(() => _useZipDownload = v)
+                    : (_) {},
+              ),
+              if (_transcodeFormat != TranscodeFormat.original)
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, bottom: 4),
+                  child: Text(
+                    'Bulk zip is only available in Original format.',
+                    style: TextStyle(
+                        fontSize: 11, color: ColorTokens.textSecondary),
+                  ),
+                ),
 
               const SizedBox(height: 28),
               Row(
@@ -265,6 +341,7 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                 ],
               ),
             ],
+          ),
           ),
         ),
       ),
@@ -343,6 +420,319 @@ class _TextField extends StatelessWidget {
           isDense: true,
         ),
       );
+}
+
+class _MusicRootField extends StatelessWidget {
+  const _MusicRootField({
+    required this.controller,
+    required this.devicePath,
+    required this.onChanged,
+  });
+
+  final TextEditingController controller;
+  final String devicePath;
+  final VoidCallback onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = controller.text.trim();
+    final error = validateMusicRootPath(raw);
+    final preview = error == null
+        ? DeviceSettings(
+                devicePath: devicePath, musicRootFolder: raw)
+            .resolvedMusicRoot
+        : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text('Music root path',
+                      style: TextStyle(
+                          fontSize: 13, color: ColorTokens.textPrimary)),
+                  Text('Relative to device root. Leave empty for root.',
+                      style: TextStyle(
+                          fontSize: 11, color: ColorTokens.textSecondary)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            SizedBox(
+              width: 200,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: controller,
+                      onChanged: (_) => onChanged(),
+                      style: const TextStyle(
+                          fontSize: 13, color: ColorTokens.textPrimary),
+                      decoration: const InputDecoration(
+                        hintText: 'e.g. Music/FLAC',
+                        hintStyle: TextStyle(
+                            color: ColorTokens.textSecondary, fontSize: 12),
+                        filled: true,
+                        fillColor: ColorTokens.surfaceVariant,
+                        contentPadding: EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(
+                          borderRadius:
+                              BorderRadius.all(Radius.circular(6)),
+                          borderSide: BorderSide.none,
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  IconButton(
+                    icon: const Icon(Icons.folder_open, size: 16),
+                    color: ColorTokens.textSecondary,
+                    tooltip: 'Browse',
+                    onPressed: () async {
+                      final picked = await DeviceFolderPickerDialog.show(
+                        context,
+                        devicePath: devicePath,
+                        initialRelative: raw,
+                      );
+                      if (picked == null) return;
+                      controller.text = picked;
+                      onChanged();
+                    },
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 28, minHeight: 28),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 2),
+            child: Text(error,
+                style: const TextStyle(
+                    fontSize: 11, color: Colors.redAccent)),
+          )
+        else if (preview != null && raw.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 2),
+            child: Text(
+              '→ $preview',
+              style: const TextStyle(
+                  fontSize: 11, color: ColorTokens.textSecondary),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CustomFolderField extends StatelessWidget {
+  const _CustomFolderField({
+    required this.controller,
+    required this.onChanged,
+  });
+  final TextEditingController controller;
+  final VoidCallback onChanged;
+
+  static const _sampleSong = Song(
+    id: 'sample',
+    title: 'Astronomy Domine',
+    album: 'The Piper at the Gates of Dawn',
+    artist: 'Pink Floyd',
+    albumArtist: 'Pink Floyd',
+    track: 1,
+    discNumber: 1,
+    year: 1967,
+    suffix: 'flac',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = controller.text;
+    final error = raw.trim().isEmpty
+        ? 'Template cannot be empty'
+        : validateFolderTemplate(raw);
+    final preview = error == null
+        ? raw
+            .replaceAll('\\', '/')
+            .split('/')
+            .map((seg) =>
+                renderFilenameTemplate(seg, _sampleSong).toSafeFilename())
+            .where((s) => s.isNotEmpty)
+            .join(' / ')
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: controller,
+            onChanged: (_) => onChanged(),
+            style: const TextStyle(
+                fontSize: 13, color: ColorTokens.textPrimary),
+            decoration: const InputDecoration(
+              hintText: '{albumArtist}/{year} - {album}',
+              hintStyle: TextStyle(
+                  color: ColorTokens.textSecondary, fontSize: 12),
+              filled: true,
+              fillColor: ColorTokens.surfaceVariant,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(6)),
+                borderSide: BorderSide.none,
+              ),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (error != null)
+            Text(error,
+                style:
+                    const TextStyle(fontSize: 11, color: Colors.redAccent))
+          else
+            Text('→ $preview',
+                style: const TextStyle(
+                    fontSize: 11, color: ColorTokens.textSecondary),
+                overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 6),
+          const Text(
+            'Use / to separate path components. {title} not allowed.',
+            style:
+                TextStyle(fontSize: 10, color: ColorTokens.textSecondary),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CustomTemplateField extends StatelessWidget {
+  const _CustomTemplateField({
+    required this.controller,
+    required this.onChanged,
+  });
+  final TextEditingController controller;
+  final VoidCallback onChanged;
+
+  static const _sampleSong = Song(
+    id: 'sample',
+    title: 'Astronomy Domine',
+    album: 'The Piper at the Gates of Dawn',
+    artist: 'Pink Floyd',
+    albumArtist: 'Pink Floyd',
+    track: 1,
+    discNumber: 1,
+    year: 1967,
+    suffix: 'flac',
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final raw = controller.text;
+    final error = raw.trim().isEmpty
+        ? 'Template cannot be empty'
+        : validateFilenameTemplate(raw);
+    final preview = error == null
+        ? '${renderFilenameTemplate(raw, _sampleSong).toSafeFilename()}.flac'
+        : null;
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: controller,
+            onChanged: (_) => onChanged(),
+            style: const TextStyle(
+                fontSize: 13, color: ColorTokens.textPrimary),
+            decoration: const InputDecoration(
+              hintText: '{track:02} - {title}',
+              hintStyle: TextStyle(
+                  color: ColorTokens.textSecondary, fontSize: 12),
+              filled: true,
+              fillColor: ColorTokens.surfaceVariant,
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(6)),
+                borderSide: BorderSide.none,
+              ),
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 6),
+          if (error != null)
+            Text(error,
+                style:
+                    const TextStyle(fontSize: 11, color: Colors.redAccent))
+          else
+            Text('→ $preview',
+                style: const TextStyle(
+                    fontSize: 11, color: ColorTokens.textSecondary),
+                overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: const [
+              '{track}',
+              '{track:02}',
+              '{disc}',
+              '{disc:02}',
+              '{title}',
+              '{artist}',
+              '{albumArtist}',
+              '{album}',
+              '{year}',
+            ]
+                .map((t) => GestureDetector(
+                      onTap: () {
+                        final s = controller.selection;
+                        final start =
+                            s.start >= 0 ? s.start : controller.text.length;
+                        final end = s.end >= 0 ? s.end : start;
+                        final before = controller.text.substring(0, start);
+                        final after = controller.text.substring(end);
+                        controller.text = '$before$t$after';
+                        controller.selection = TextSelection.collapsed(
+                            offset: before.length + t.length);
+                        onChanged();
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: ColorTokens.surfaceVariant,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          t,
+                          style: const TextStyle(
+                              fontSize: 10,
+                              color: ColorTokens.textSecondary,
+                              fontFamily: 'monospace'),
+                        ),
+                      ),
+                    ))
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _Switch extends StatelessWidget {

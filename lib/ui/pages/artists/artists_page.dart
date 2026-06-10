@@ -9,6 +9,7 @@ import '../../../application/device/device_settings_notifier.dart';
 import '../../../domain/models/device_settings.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
+import '../../../application/library/song_selection_notifier.dart';
 import '../../../application/lidarr/lidarr_notifier.dart';
 import '../../../application/playback/playback_notifier.dart';
 import '../lidarr/lidarr_page.dart' show showInteractiveSearchSheet;
@@ -25,6 +26,7 @@ import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/error_retry.dart';
+import '../../widgets/selection_action_bar.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/song_row.dart';
 import '../../widgets/sync_dot.dart';
@@ -253,8 +255,10 @@ class _ArtistDetailPanel extends ConsumerWidget {
       data: (albums) {
         final totalSongs = albums.fold(0, (sum, a) => sum + a.songCount);
 
-        return CustomScrollView(
-          slivers: [
+        return Stack(
+          children: [
+            CustomScrollView(
+              slivers: [
             // ── Artist header ─────────────────────────────────────────────
             SliverToBoxAdapter(
               child: Padding(
@@ -365,6 +369,14 @@ class _ArtistDetailPanel extends ConsumerWidget {
 
             const SliverToBoxAdapter(
                 child: SizedBox(height: AppConstants.scrollBottomInset)),
+              ],
+            ),
+            const Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: _ArtistSelectionBar(),
+            ),
           ],
         );
       },
@@ -395,19 +407,33 @@ class _ArtistDetailPanel extends ConsumerWidget {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
     final settings = ref.read(deviceSettingsProvider(devicePath));
-    final allSongs = <Song>[];
-    final expectedCounts = <String, int>{};
+    final queue = ref.read(transferQueueProvider.notifier);
+    final useZip = settings.useZipDownload && !settings.isTranscoding;
+
+    // Per-album dispatch: each album gets its own zip group (or per-song
+    // batch when zip mode is off). Fully-on-device albums are skipped — the
+    // user asked to transfer the artist, not redownload what's already there.
     for (final album in albums) {
       final full = await repo.getAlbum(album.id);
-      allSongs.addAll(full.songs);
-      final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
-      if (folder != null) expectedCounts[folder] = full.songCount;
-    }
-    if (allSongs.isEmpty) return;
-    ref
-        .read(transferQueueProvider.notifier)
-        .enqueue(allSongs, devicePath,
+      if (full.songs.isEmpty) continue;
+      if (!settings.overwriteExisting) {
+        // Direct File.existsSync per song so a stale manifest entry doesn't
+        // make us skip an album whose files were deleted from device.
+        final allOnDevice =
+            full.songs.every((s) => songFileExistsOnDevice(s, settings));
+        if (allOnDevice) continue;
+      }
+      if (useZip) {
+        queue.enqueueZipGroup(full.id, full.songs, devicePath);
+      } else {
+        final folder = buildAlbumFolder(
+            full.artist, full.name, full.year, settings);
+        final expectedCounts =
+            folder != null ? {folder: full.songCount} : null;
+        queue.enqueue(full.songs, devicePath,
             expectedAlbumSongCounts: expectedCounts);
+      }
+    }
   }
 }
 
@@ -851,6 +877,7 @@ class _AlbumSection extends ConsumerWidget {
                   allSongs: full.songs,
                   index: e.key,
                   settings: settings,
+                  scopeKey: 'album:${album.id}',
                 ),
               ).toList(),
             );
@@ -941,12 +968,19 @@ class _AlbumSection extends ConsumerWidget {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) return;
       final settings = ref.read(deviceSettingsProvider(devicePath));
-      final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
-      final expectedCounts = folder != null ? {folder: full.songCount} : null;
-      ref
-          .read(transferQueueProvider.notifier)
-          .enqueue(full.songs, devicePath,
-              expectedAlbumSongCounts: expectedCounts);
+      if (settings.useZipDownload && !settings.isTranscoding) {
+        ref
+            .read(transferQueueProvider.notifier)
+            .enqueueZipGroup(album.id, full.songs, devicePath);
+      } else {
+        final folder =
+            buildAlbumFolder(album.artist, album.name, album.year, settings);
+        final expectedCounts = folder != null ? {folder: full.songCount} : null;
+        ref
+            .read(transferQueueProvider.notifier)
+            .enqueue(full.songs, devicePath,
+                expectedAlbumSongCounts: expectedCounts);
+      }
     } else if (result == 'playlist') {
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;
@@ -967,6 +1001,7 @@ class _AlbumSongStatusRow extends ConsumerWidget {
     required this.song,
     required this.allSongs,
     required this.index,
+    required this.scopeKey,
     this.settings,
   });
 
@@ -974,6 +1009,7 @@ class _AlbumSongStatusRow extends ConsumerWidget {
   final List<Song> allSongs;
   final int index;
   final DeviceSettings? settings;
+  final String scopeKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -993,6 +1029,8 @@ class _AlbumSongStatusRow extends ConsumerWidget {
       }),
     );
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);
+    final isSelected = ref.watch(songSelectionProvider.select((s) =>
+        s.matches(scopeKey) && s.isSelected(song.id)));
 
     Widget? trailing;
     if (isActive || isQueued) {
@@ -1013,15 +1051,58 @@ class _AlbumSongStatusRow extends ConsumerWidget {
     return SongRow(
       song: song,
       index: index,
+      selected: isSelected,
+      selectionScopeKey: scopeKey,
+      selectionAllSongs: allSongs,
       trailing: trailing,
       showArtist: false,
       onTap: () => ref
           .read(playbackProvider.notifier)
           .playSong(song, queue: allSongs, index: index),
+      onTapWithModifiers: (mods) {
+        final notifier = ref.read(songSelectionProvider.notifier);
+        if (mods.hasRange) {
+          notifier.selectRange(scopeKey, allSongs, index);
+          return;
+        }
+        if (mods.hasToggle) {
+          notifier.toggle(scopeKey, song.id, index);
+          return;
+        }
+        final selection = ref.read(songSelectionProvider);
+        if (selection.matches(scopeKey) && !selection.isEmpty) {
+          notifier.selectOnly(scopeKey, song.id, index);
+          return;
+        }
+        ref
+            .read(playbackProvider.notifier)
+            .playSong(song, queue: allSongs, index: index);
+      },
       onAddToPlaylist: () =>
           showAddToPlaylistDialog(context, ref, [song.id]),
       onGetInfo: () => showSongMetadataDialog(context, song),
     );
+  }
+}
+
+/// Floating selection bar for the artist detail panel. Watches the current
+/// selection scope, resolves the active album id, fetches its songs, and
+/// renders [SelectionActionBar] with them. Returns SizedBox.shrink when the
+/// scope isn't an album within this view.
+class _ArtistSelectionBar extends ConsumerWidget {
+  const _ArtistSelectionBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selection = ref.watch(songSelectionProvider);
+    final scope = selection.scopeKey;
+    if (scope == null || selection.isEmpty || !scope.startsWith('album:')) {
+      return const SizedBox.shrink();
+    }
+    final albumId = scope.substring('album:'.length);
+    final album = ref.watch(albumProvider(albumId)).valueOrNull;
+    if (album == null) return const SizedBox.shrink();
+    return SelectionActionBar(scopeKey: scope, allSongs: album.songs);
   }
 }
 
@@ -1065,21 +1146,29 @@ Future<void> _showArtistMenu(
     final settings = ref.read(deviceSettingsProvider(devicePath));
     final albums = await ref.read(albumsByArtistProvider(artist.id).future);
     if (!context.mounted) return;
-    final allSongs = <Song>[];
-    final expectedCounts = <String, int>{};
+    final queue = ref.read(transferQueueProvider.notifier);
+    final useZip = settings.useZipDownload && !settings.isTranscoding;
     for (final album in albums) {
       final full = await repo.getAlbum(album.id);
-      allSongs.addAll(full.songs);
-      final folder =
-          buildAlbumFolder(album.artist, album.name, album.year, settings);
-      if (folder != null) expectedCounts[folder] = full.songCount;
+      if (full.songs.isEmpty) continue;
+      if (!settings.overwriteExisting) {
+        // Direct File.existsSync per song so a stale manifest entry doesn't
+        // make us skip an album whose files were deleted from device.
+        final allOnDevice =
+            full.songs.every((s) => songFileExistsOnDevice(s, settings));
+        if (allOnDevice) continue;
+      }
+      if (useZip) {
+        queue.enqueueZipGroup(full.id, full.songs, devicePath);
+      } else {
+        final folder = buildAlbumFolder(
+            full.artist, full.name, full.year, settings);
+        final expectedCounts =
+            folder != null ? {folder: full.songCount} : null;
+        queue.enqueue(full.songs, devicePath,
+            expectedAlbumSongCounts: expectedCounts);
+      }
     }
-    if (allSongs.isEmpty) return;
-    ref.read(transferQueueProvider.notifier).enqueue(
-          allSongs,
-          devicePath,
-          expectedAlbumSongCounts: expectedCounts,
-        );
   }
 }
 

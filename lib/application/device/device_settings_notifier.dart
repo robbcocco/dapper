@@ -32,6 +32,9 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
       overwriteExisting: Value(settings.overwriteExisting),
       transcodeFormat: Value(settings.transcodeFormat.name),
       transcodeMaxBitRate: Value(settings.transcodeMaxBitRate),
+      useZipDownload: Value(settings.useZipDownload),
+      customFilenameTemplate: Value(settings.customFilenameTemplate),
+      customFolderTemplate: Value(settings.customFolderTemplate),
     ));
   }
 
@@ -54,6 +57,9 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
           orElse: () => TranscodeFormat.original,
         ),
         transcodeMaxBitRate: row.transcodeMaxBitRate,
+        useZipDownload: row.useZipDownload,
+        customFilenameTemplate: row.customFilenameTemplate,
+        customFolderTemplate: row.customFolderTemplate,
       );
 }
 

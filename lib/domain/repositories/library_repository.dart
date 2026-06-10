@@ -45,4 +45,8 @@ abstract interface class LibraryRepository {
   /// [format] is null, otherwise a transcoded stream via /rest/stream with
   /// the given `maxBitRate` and `format` parameters.
   Uri transferUri(String songId, {String? format, int? maxBitRate});
+
+  /// Bulk download URL: returns a zip of originals when [id] points to an
+  /// album, artist, or playlist. No transcoding options supported.
+  Uri zipUri(String id);
 }

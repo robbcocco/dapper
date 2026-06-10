@@ -17,6 +17,7 @@ import '../../../domain/repositories/library_repository.dart';
 import '../../widgets/confirm_dialog.dart';
 import 'device_file_browser.dart';
 import 'device_settings_dialog.dart';
+import 'library_sync_dialog.dart';
 
 class DevicePage extends ConsumerWidget {
   const DevicePage({super.key});
@@ -126,6 +127,16 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
                 ),
               ),
               if (selected != null) ...[
+                IconButton(
+                  icon: const Icon(Icons.sync,
+                      size: 16, color: ColorTokens.textSecondary),
+                  tooltip: 'Sync library to device',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () =>
+                      LibrarySyncDialog.show(context, selected.path),
+                ),
                 IconButton(
                   icon: const Icon(Icons.manage_search,
                       size: 16, color: ColorTokens.textSecondary),
@@ -905,6 +916,17 @@ class _TaskRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Progress is owned by transferProgressProvider (throttled to ~5Hz). The
+    // TransferTask itself never has bytesReceived/totalBytes updated mid-
+    // download, so reading task.progress used to leave every row stuck at 0.
+    // .select(...) so this row only rebuilds when its own entry changes.
+    final progress = ref.watch(
+      transferProgressProvider.select((m) => m[task.id]),
+    );
+    final progressValue = progress != null && progress.$2 > 0
+        ? progress.$1 / progress.$2
+        : null; // null = indeterminate bar (works for the brief pre-bytes window)
+
     return Container(
       height: 52,
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
@@ -929,7 +951,7 @@ class _TaskRow extends ConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 3),
                     child: LinearProgressIndicator(
-                      value: task.progress,
+                      value: progressValue,
                       backgroundColor: ColorTokens.surfaceVariant,
                       valueColor:
                           const AlwaysStoppedAnimation(ColorTokens.accent),

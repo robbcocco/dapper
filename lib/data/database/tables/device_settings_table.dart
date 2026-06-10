@@ -18,6 +18,15 @@ class DeviceSettingsTable extends Table {
   TextColumn get transcodeFormat =>
       text().withDefault(const Constant('original'))();
   IntColumn get transcodeMaxBitRate => integer().nullable()();
+  // v5: bulk-zip download mode. Default-on as of v8 — faster for most setups.
+  BoolColumn get useZipDownload =>
+      boolean().withDefault(const Constant(true))();
+  // v6: custom filename template (only honoured when filenameFormat == custom).
+  TextColumn get customFilenameTemplate =>
+      text().withDefault(const Constant(''))();
+  // v7: custom folder template (only honoured when folderStructure == custom).
+  TextColumn get customFolderTemplate =>
+      text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => {devicePath};

@@ -25,6 +25,16 @@ mixin _$TransferTask {
   int get totalBytes => throw _privateConstructorUsedError;
   String? get errorMessage => throw _privateConstructorUsedError;
 
+  /// Non-null when this task is part of a bulk-zip group. All tasks in the
+  /// group share the same id; the engine processes the group as a single
+  /// download + extract operation.
+  String? get zipGroupId => throw _privateConstructorUsedError;
+
+  /// Album/artist id passed to /rest/download. Only set on the "leader"
+  /// task within a [zipGroupId] — the leader's execution drives the zip
+  /// fetch and dispatches each extracted entry to its sibling task.
+  String? get zipSourceId => throw _privateConstructorUsedError;
+
   /// Create a copy of TransferTask
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -47,6 +57,8 @@ abstract class $TransferTaskCopyWith<$Res> {
     int bytesReceived,
     int totalBytes,
     String? errorMessage,
+    String? zipGroupId,
+    String? zipSourceId,
   });
 
   $SongCopyWith<$Res> get song;
@@ -74,6 +86,8 @@ class _$TransferTaskCopyWithImpl<$Res, $Val extends TransferTask>
     Object? bytesReceived = null,
     Object? totalBytes = null,
     Object? errorMessage = freezed,
+    Object? zipGroupId = freezed,
+    Object? zipSourceId = freezed,
   }) {
     return _then(
       _value.copyWith(
@@ -104,6 +118,14 @@ class _$TransferTaskCopyWithImpl<$Res, $Val extends TransferTask>
             errorMessage: freezed == errorMessage
                 ? _value.errorMessage
                 : errorMessage // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            zipGroupId: freezed == zipGroupId
+                ? _value.zipGroupId
+                : zipGroupId // ignore: cast_nullable_to_non_nullable
+                      as String?,
+            zipSourceId: freezed == zipSourceId
+                ? _value.zipSourceId
+                : zipSourceId // ignore: cast_nullable_to_non_nullable
                       as String?,
           )
           as $Val,
@@ -138,6 +160,8 @@ abstract class _$$TransferTaskImplCopyWith<$Res>
     int bytesReceived,
     int totalBytes,
     String? errorMessage,
+    String? zipGroupId,
+    String? zipSourceId,
   });
 
   @override
@@ -165,6 +189,8 @@ class __$$TransferTaskImplCopyWithImpl<$Res>
     Object? bytesReceived = null,
     Object? totalBytes = null,
     Object? errorMessage = freezed,
+    Object? zipGroupId = freezed,
+    Object? zipSourceId = freezed,
   }) {
     return _then(
       _$TransferTaskImpl(
@@ -196,6 +222,14 @@ class __$$TransferTaskImplCopyWithImpl<$Res>
             ? _value.errorMessage
             : errorMessage // ignore: cast_nullable_to_non_nullable
                   as String?,
+        zipGroupId: freezed == zipGroupId
+            ? _value.zipGroupId
+            : zipGroupId // ignore: cast_nullable_to_non_nullable
+                  as String?,
+        zipSourceId: freezed == zipSourceId
+            ? _value.zipSourceId
+            : zipSourceId // ignore: cast_nullable_to_non_nullable
+                  as String?,
       ),
     );
   }
@@ -212,6 +246,8 @@ class _$TransferTaskImpl extends _TransferTask {
     this.bytesReceived = 0,
     this.totalBytes = 0,
     this.errorMessage,
+    this.zipGroupId,
+    this.zipSourceId,
   }) : super._();
 
   @override
@@ -232,9 +268,21 @@ class _$TransferTaskImpl extends _TransferTask {
   @override
   final String? errorMessage;
 
+  /// Non-null when this task is part of a bulk-zip group. All tasks in the
+  /// group share the same id; the engine processes the group as a single
+  /// download + extract operation.
+  @override
+  final String? zipGroupId;
+
+  /// Album/artist id passed to /rest/download. Only set on the "leader"
+  /// task within a [zipGroupId] — the leader's execution drives the zip
+  /// fetch and dispatches each extracted entry to its sibling task.
+  @override
+  final String? zipSourceId;
+
   @override
   String toString() {
-    return 'TransferTask(id: $id, song: $song, devicePath: $devicePath, status: $status, bytesReceived: $bytesReceived, totalBytes: $totalBytes, errorMessage: $errorMessage)';
+    return 'TransferTask(id: $id, song: $song, devicePath: $devicePath, status: $status, bytesReceived: $bytesReceived, totalBytes: $totalBytes, errorMessage: $errorMessage, zipGroupId: $zipGroupId, zipSourceId: $zipSourceId)';
   }
 
   @override
@@ -252,7 +300,11 @@ class _$TransferTaskImpl extends _TransferTask {
             (identical(other.totalBytes, totalBytes) ||
                 other.totalBytes == totalBytes) &&
             (identical(other.errorMessage, errorMessage) ||
-                other.errorMessage == errorMessage));
+                other.errorMessage == errorMessage) &&
+            (identical(other.zipGroupId, zipGroupId) ||
+                other.zipGroupId == zipGroupId) &&
+            (identical(other.zipSourceId, zipSourceId) ||
+                other.zipSourceId == zipSourceId));
   }
 
   @override
@@ -265,6 +317,8 @@ class _$TransferTaskImpl extends _TransferTask {
     bytesReceived,
     totalBytes,
     errorMessage,
+    zipGroupId,
+    zipSourceId,
   );
 
   /// Create a copy of TransferTask
@@ -285,6 +339,8 @@ abstract class _TransferTask extends TransferTask {
     final int bytesReceived,
     final int totalBytes,
     final String? errorMessage,
+    final String? zipGroupId,
+    final String? zipSourceId,
   }) = _$TransferTaskImpl;
   const _TransferTask._() : super._();
 
@@ -302,6 +358,18 @@ abstract class _TransferTask extends TransferTask {
   int get totalBytes;
   @override
   String? get errorMessage;
+
+  /// Non-null when this task is part of a bulk-zip group. All tasks in the
+  /// group share the same id; the engine processes the group as a single
+  /// download + extract operation.
+  @override
+  String? get zipGroupId;
+
+  /// Album/artist id passed to /rest/download. Only set on the "leader"
+  /// task within a [zipGroupId] — the leader's execution drives the zip
+  /// fetch and dispatches each extracted entry to its sibling task.
+  @override
+  String? get zipSourceId;
 
   /// Create a copy of TransferTask
   /// with the given fields replaced by the non-null parameter values.

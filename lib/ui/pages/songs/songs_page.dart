@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
+import '../../../application/library/song_selection_notifier.dart';
 import '../../../application/library/starred_notifier.dart';
 import '../../../application/playback/playback_notifier.dart';
 import '../../../application/providers/providers.dart';
@@ -15,6 +17,8 @@ import '../../../domain/models/song.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/error_retry.dart';
+import '../../widgets/select_all_shortcut.dart';
+import '../../widgets/selection_action_bar.dart';
 import '../../widgets/song_metadata_dialog.dart';
 import '../../widgets/sync_dot.dart';
 
@@ -47,6 +51,8 @@ class _SongsPageState extends ConsumerState<SongsPage> {
     }
   }
 
+  static const _scopeKey = 'songs:all';
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(allSongsProvider);
@@ -61,54 +67,79 @@ class _SongsPageState extends ConsumerState<SongsPage> {
       );
     }
 
-    return Column(
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(songSelectionProvider.notifier).setScope(_scopeKey);
+    });
+
+    return SelectAllShortcut(
+      scopeKey: _scopeKey,
+      allSongs: s.songs,
+      child: Stack(
       children: [
-        // Column headers
-        Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: ColorTokens.divider)),
-          ),
-          child: const Row(
-            children: [
-              SizedBox(width: 40), // track #
-              Expanded(flex: 3, child: _ColHeader('Title')),
-              Expanded(flex: 2, child: _ColHeader('Artist')),
-              Expanded(flex: 2, child: _ColHeader('Album')),
-              SizedBox(width: 55, child: _ColHeader('Time', align: TextAlign.right)),
-              SizedBox(width: 20), // sync indicator
-              SizedBox(width: 36), // star + padding
-            ],
-          ),
+        Column(
+          children: [
+            // Column headers
+            Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: const BoxDecoration(
+                border:
+                    Border(bottom: BorderSide(color: ColorTokens.divider)),
+              ),
+              child: const Row(
+                children: [
+                  SizedBox(width: 40), // track #
+                  Expanded(flex: 3, child: _ColHeader('Title')),
+                  Expanded(flex: 2, child: _ColHeader('Artist')),
+                  Expanded(flex: 2, child: _ColHeader('Album')),
+                  SizedBox(
+                      width: 55,
+                      child: _ColHeader('Time', align: TextAlign.right)),
+                  SizedBox(width: 20), // sync indicator
+                  SizedBox(width: 36), // star + padding
+                ],
+              ),
+            ),
+            // Song list
+            Expanded(
+              child: ListView.builder(
+                controller: _scrollCtrl,
+                padding: const EdgeInsets.only(
+                    bottom: AppConstants.scrollBottomInset),
+                itemCount: s.songs.length + (s.isLoading ? 1 : 0),
+                itemExtent: 36,
+                itemBuilder: (context, i) {
+                  if (i >= s.songs.length) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(8),
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    );
+                  }
+                  final song = s.songs[i];
+                  return _SongTableRow(
+                    song: song,
+                    index: i,
+                    allSongs: s.songs,
+                    scopeKey: _scopeKey,
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-        // Song list
-        Expanded(
-          child: ListView.builder(
-            controller: _scrollCtrl,
-            padding: const EdgeInsets.only(
-                bottom: AppConstants.scrollBottomInset),
-            itemCount: s.songs.length + (s.isLoading ? 1 : 0),
-            itemExtent: 36,
-            itemBuilder: (context, i) {
-              if (i >= s.songs.length) {
-                return const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(8),
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                );
-              }
-              final song = s.songs[i];
-              return _SongTableRow(
-                song: song,
-                index: i,
-                allSongs: s.songs,
-              );
-            },
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: SelectionActionBar(
+            scopeKey: _scopeKey,
+            allSongs: s.songs,
           ),
         ),
       ],
+    ),
     );
   }
 }
@@ -140,11 +171,13 @@ class _SongTableRow extends ConsumerWidget {
     required this.song,
     required this.index,
     required this.allSongs,
+    required this.scopeKey,
   });
 
   final Song song;
   final int index;
   final List<Song> allSongs;
+  final String scopeKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -173,18 +206,39 @@ class _SongTableRow extends ConsumerWidget {
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
     final isOnDevice = settings != null && songExistsOnDevice(song, settings);
+    final isSelected = ref.watch(songSelectionProvider.select((s) =>
+        s.matches(scopeKey) && s.isSelected(song.id)));
 
     return GestureDetector(
-      onTap: () => ref
-          .read(playbackProvider.notifier)
-          .playSong(song, queue: allSongs, index: index),
+      onTap: () {
+        final keyboard = HardwareKeyboard.instance;
+        final notifier = ref.read(songSelectionProvider.notifier);
+        if (keyboard.isShiftPressed) {
+          notifier.selectRange(scopeKey, allSongs, index);
+          return;
+        }
+        if (keyboard.isMetaPressed || keyboard.isControlPressed) {
+          notifier.toggle(scopeKey, song.id, index);
+          return;
+        }
+        final selection = ref.read(songSelectionProvider);
+        if (selection.matches(scopeKey) && !selection.isEmpty) {
+          notifier.selectOnly(scopeKey, song.id, index);
+          return;
+        }
+        ref
+            .read(playbackProvider.notifier)
+            .playSong(song, queue: allSongs, index: index);
+      },
       onSecondaryTapUp: (d) => _showMenu(context, ref, d.globalPosition),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         decoration: BoxDecoration(
-          color: isPlaying
-              ? ColorTokens.accent.withValues(alpha: 0.08)
-              : Colors.transparent,
+          color: isSelected
+              ? ColorTokens.accent.withValues(alpha: 0.18)
+              : isPlaying
+                  ? ColorTokens.accent.withValues(alpha: 0.08)
+                  : Colors.transparent,
           border: const Border(
               bottom: BorderSide(color: Color(0xFF2A2A2A))),
         ),
@@ -293,6 +347,18 @@ class _SongTableRow extends ConsumerWidget {
 
   void _showMenu(BuildContext ctx, WidgetRef ref, Offset pos) async {
     final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
+    // Bulk-aware menu: when this row sits inside an active selection that
+    // includes more than one song, the transfer / playlist actions operate
+    // on the whole selection.
+    final selection = ref.read(songSelectionProvider);
+    final isBulk = selection.matches(scopeKey) &&
+        selection.isSelected(song.id) &&
+        selection.count > 1;
+    final bulkSongs = isBulk
+        ? allSongs.where((s) => selection.selectedIds.contains(s.id)).toList()
+        : const <Song>[];
+    final bulkLabel = '${bulkSongs.length} selected songs';
+
     final result = await showMenu<String>(
       context: ctx,
       position: RelativeRect.fromLTRB(pos.dx, pos.dy, pos.dx, pos.dy),
@@ -306,11 +372,16 @@ class _SongTableRow extends ConsumerWidget {
               value: 'transfer:${d.path}',
               child: _MenuItem(
                   icon: Icons.download,
-                  label: 'Transfer to ${d.label}')),
-        const PopupMenuItem(
+                  label: isBulk
+                      ? 'Transfer $bulkLabel to ${d.label}'
+                      : 'Transfer to ${d.label}')),
+        PopupMenuItem(
             value: 'playlist',
             child: _MenuItem(
-                icon: Icons.playlist_add, label: 'Add to Playlist')),
+                icon: Icons.playlist_add,
+                label: isBulk
+                    ? 'Add $bulkLabel to Playlist'
+                    : 'Add to Playlist')),
         const PopupMenuItem(
             value: 'info',
             child: _MenuItem(icon: Icons.info_outline, label: 'Get Info')),
@@ -327,10 +398,13 @@ class _SongTableRow extends ConsumerWidget {
       if (repo != null) {
         ref
             .read(transferQueueProvider.notifier)
-            .enqueue([song], devicePath);
+            .enqueue(isBulk ? bulkSongs : [song], devicePath);
+        if (isBulk) ref.read(songSelectionProvider.notifier).clear();
       }
     } else if (result == 'playlist') {
-      unawaited(showAddToPlaylistDialog(ctx, ref, [song.id]));
+      final ids = isBulk ? bulkSongs.map((s) => s.id).toList() : [song.id];
+      unawaited(showAddToPlaylistDialog(ctx, ref, ids));
+      if (isBulk) ref.read(songSelectionProvider.notifier).clear();
     } else if (result == 'info') {
       unawaited(showSongMetadataDialog(ctx, song));
     }

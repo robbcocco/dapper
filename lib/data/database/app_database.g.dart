@@ -1893,6 +1893,45 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _useZipDownloadMeta = const VerificationMeta(
+    'useZipDownload',
+  );
+  @override
+  late final GeneratedColumn<bool> useZipDownload = GeneratedColumn<bool>(
+    'use_zip_download',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("use_zip_download" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _customFilenameTemplateMeta =
+      const VerificationMeta('customFilenameTemplate');
+  @override
+  late final GeneratedColumn<String> customFilenameTemplate =
+      GeneratedColumn<String>(
+        'custom_filename_template',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
+  static const VerificationMeta _customFolderTemplateMeta =
+      const VerificationMeta('customFolderTemplate');
+  @override
+  late final GeneratedColumn<String> customFolderTemplate =
+      GeneratedColumn<String>(
+        'custom_folder_template',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(''),
+      );
   @override
   List<GeneratedColumn> get $columns => [
     devicePath,
@@ -1904,6 +1943,9 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
     overwriteExisting,
     transcodeFormat,
     transcodeMaxBitRate,
+    useZipDownload,
+    customFilenameTemplate,
+    customFolderTemplate,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1997,6 +2039,33 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
         ),
       );
     }
+    if (data.containsKey('use_zip_download')) {
+      context.handle(
+        _useZipDownloadMeta,
+        useZipDownload.isAcceptableOrUnknown(
+          data['use_zip_download']!,
+          _useZipDownloadMeta,
+        ),
+      );
+    }
+    if (data.containsKey('custom_filename_template')) {
+      context.handle(
+        _customFilenameTemplateMeta,
+        customFilenameTemplate.isAcceptableOrUnknown(
+          data['custom_filename_template']!,
+          _customFilenameTemplateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('custom_folder_template')) {
+      context.handle(
+        _customFolderTemplateMeta,
+        customFolderTemplate.isAcceptableOrUnknown(
+          data['custom_folder_template']!,
+          _customFolderTemplateMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2045,6 +2114,18 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
         DriftSqlType.int,
         data['${effectivePrefix}transcode_max_bit_rate'],
       ),
+      useZipDownload: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}use_zip_download'],
+      )!,
+      customFilenameTemplate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}custom_filename_template'],
+      )!,
+      customFolderTemplate: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}custom_folder_template'],
+      )!,
     );
   }
 
@@ -2065,6 +2146,9 @@ class DeviceSettingsTableData extends DataClass
   final bool overwriteExisting;
   final String transcodeFormat;
   final int? transcodeMaxBitRate;
+  final bool useZipDownload;
+  final String customFilenameTemplate;
+  final String customFolderTemplate;
   const DeviceSettingsTableData({
     required this.devicePath,
     required this.musicRootFolder,
@@ -2075,6 +2159,9 @@ class DeviceSettingsTableData extends DataClass
     required this.overwriteExisting,
     required this.transcodeFormat,
     this.transcodeMaxBitRate,
+    required this.useZipDownload,
+    required this.customFilenameTemplate,
+    required this.customFolderTemplate,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2090,6 +2177,9 @@ class DeviceSettingsTableData extends DataClass
     if (!nullToAbsent || transcodeMaxBitRate != null) {
       map['transcode_max_bit_rate'] = Variable<int>(transcodeMaxBitRate);
     }
+    map['use_zip_download'] = Variable<bool>(useZipDownload);
+    map['custom_filename_template'] = Variable<String>(customFilenameTemplate);
+    map['custom_folder_template'] = Variable<String>(customFolderTemplate);
     return map;
   }
 
@@ -2106,6 +2196,9 @@ class DeviceSettingsTableData extends DataClass
       transcodeMaxBitRate: transcodeMaxBitRate == null && nullToAbsent
           ? const Value.absent()
           : Value(transcodeMaxBitRate),
+      useZipDownload: Value(useZipDownload),
+      customFilenameTemplate: Value(customFilenameTemplate),
+      customFolderTemplate: Value(customFolderTemplate),
     );
   }
 
@@ -2126,6 +2219,13 @@ class DeviceSettingsTableData extends DataClass
       transcodeMaxBitRate: serializer.fromJson<int?>(
         json['transcodeMaxBitRate'],
       ),
+      useZipDownload: serializer.fromJson<bool>(json['useZipDownload']),
+      customFilenameTemplate: serializer.fromJson<String>(
+        json['customFilenameTemplate'],
+      ),
+      customFolderTemplate: serializer.fromJson<String>(
+        json['customFolderTemplate'],
+      ),
     );
   }
   @override
@@ -2141,6 +2241,11 @@ class DeviceSettingsTableData extends DataClass
       'overwriteExisting': serializer.toJson<bool>(overwriteExisting),
       'transcodeFormat': serializer.toJson<String>(transcodeFormat),
       'transcodeMaxBitRate': serializer.toJson<int?>(transcodeMaxBitRate),
+      'useZipDownload': serializer.toJson<bool>(useZipDownload),
+      'customFilenameTemplate': serializer.toJson<String>(
+        customFilenameTemplate,
+      ),
+      'customFolderTemplate': serializer.toJson<String>(customFolderTemplate),
     };
   }
 
@@ -2154,6 +2259,9 @@ class DeviceSettingsTableData extends DataClass
     bool? overwriteExisting,
     String? transcodeFormat,
     Value<int?> transcodeMaxBitRate = const Value.absent(),
+    bool? useZipDownload,
+    String? customFilenameTemplate,
+    String? customFolderTemplate,
   }) => DeviceSettingsTableData(
     devicePath: devicePath ?? this.devicePath,
     musicRootFolder: musicRootFolder ?? this.musicRootFolder,
@@ -2166,6 +2274,10 @@ class DeviceSettingsTableData extends DataClass
     transcodeMaxBitRate: transcodeMaxBitRate.present
         ? transcodeMaxBitRate.value
         : this.transcodeMaxBitRate,
+    useZipDownload: useZipDownload ?? this.useZipDownload,
+    customFilenameTemplate:
+        customFilenameTemplate ?? this.customFilenameTemplate,
+    customFolderTemplate: customFolderTemplate ?? this.customFolderTemplate,
   );
   DeviceSettingsTableData copyWithCompanion(DeviceSettingsTableCompanion data) {
     return DeviceSettingsTableData(
@@ -2196,6 +2308,15 @@ class DeviceSettingsTableData extends DataClass
       transcodeMaxBitRate: data.transcodeMaxBitRate.present
           ? data.transcodeMaxBitRate.value
           : this.transcodeMaxBitRate,
+      useZipDownload: data.useZipDownload.present
+          ? data.useZipDownload.value
+          : this.useZipDownload,
+      customFilenameTemplate: data.customFilenameTemplate.present
+          ? data.customFilenameTemplate.value
+          : this.customFilenameTemplate,
+      customFolderTemplate: data.customFolderTemplate.present
+          ? data.customFolderTemplate.value
+          : this.customFolderTemplate,
     );
   }
 
@@ -2210,7 +2331,10 @@ class DeviceSettingsTableData extends DataClass
           ..write('includeYear: $includeYear, ')
           ..write('overwriteExisting: $overwriteExisting, ')
           ..write('transcodeFormat: $transcodeFormat, ')
-          ..write('transcodeMaxBitRate: $transcodeMaxBitRate')
+          ..write('transcodeMaxBitRate: $transcodeMaxBitRate, ')
+          ..write('useZipDownload: $useZipDownload, ')
+          ..write('customFilenameTemplate: $customFilenameTemplate, ')
+          ..write('customFolderTemplate: $customFolderTemplate')
           ..write(')'))
         .toString();
   }
@@ -2226,6 +2350,9 @@ class DeviceSettingsTableData extends DataClass
     overwriteExisting,
     transcodeFormat,
     transcodeMaxBitRate,
+    useZipDownload,
+    customFilenameTemplate,
+    customFolderTemplate,
   );
   @override
   bool operator ==(Object other) =>
@@ -2239,7 +2366,10 @@ class DeviceSettingsTableData extends DataClass
           other.includeYear == this.includeYear &&
           other.overwriteExisting == this.overwriteExisting &&
           other.transcodeFormat == this.transcodeFormat &&
-          other.transcodeMaxBitRate == this.transcodeMaxBitRate);
+          other.transcodeMaxBitRate == this.transcodeMaxBitRate &&
+          other.useZipDownload == this.useZipDownload &&
+          other.customFilenameTemplate == this.customFilenameTemplate &&
+          other.customFolderTemplate == this.customFolderTemplate);
 }
 
 class DeviceSettingsTableCompanion
@@ -2253,6 +2383,9 @@ class DeviceSettingsTableCompanion
   final Value<bool> overwriteExisting;
   final Value<String> transcodeFormat;
   final Value<int?> transcodeMaxBitRate;
+  final Value<bool> useZipDownload;
+  final Value<String> customFilenameTemplate;
+  final Value<String> customFolderTemplate;
   final Value<int> rowid;
   const DeviceSettingsTableCompanion({
     this.devicePath = const Value.absent(),
@@ -2264,6 +2397,9 @@ class DeviceSettingsTableCompanion
     this.overwriteExisting = const Value.absent(),
     this.transcodeFormat = const Value.absent(),
     this.transcodeMaxBitRate = const Value.absent(),
+    this.useZipDownload = const Value.absent(),
+    this.customFilenameTemplate = const Value.absent(),
+    this.customFolderTemplate = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DeviceSettingsTableCompanion.insert({
@@ -2276,6 +2412,9 @@ class DeviceSettingsTableCompanion
     this.overwriteExisting = const Value.absent(),
     this.transcodeFormat = const Value.absent(),
     this.transcodeMaxBitRate = const Value.absent(),
+    this.useZipDownload = const Value.absent(),
+    this.customFilenameTemplate = const Value.absent(),
+    this.customFolderTemplate = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : devicePath = Value(devicePath);
   static Insertable<DeviceSettingsTableData> custom({
@@ -2288,6 +2427,9 @@ class DeviceSettingsTableCompanion
     Expression<bool>? overwriteExisting,
     Expression<String>? transcodeFormat,
     Expression<int>? transcodeMaxBitRate,
+    Expression<bool>? useZipDownload,
+    Expression<String>? customFilenameTemplate,
+    Expression<String>? customFolderTemplate,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2301,6 +2443,11 @@ class DeviceSettingsTableCompanion
       if (transcodeFormat != null) 'transcode_format': transcodeFormat,
       if (transcodeMaxBitRate != null)
         'transcode_max_bit_rate': transcodeMaxBitRate,
+      if (useZipDownload != null) 'use_zip_download': useZipDownload,
+      if (customFilenameTemplate != null)
+        'custom_filename_template': customFilenameTemplate,
+      if (customFolderTemplate != null)
+        'custom_folder_template': customFolderTemplate,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2315,6 +2462,9 @@ class DeviceSettingsTableCompanion
     Value<bool>? overwriteExisting,
     Value<String>? transcodeFormat,
     Value<int?>? transcodeMaxBitRate,
+    Value<bool>? useZipDownload,
+    Value<String>? customFilenameTemplate,
+    Value<String>? customFolderTemplate,
     Value<int>? rowid,
   }) {
     return DeviceSettingsTableCompanion(
@@ -2327,6 +2477,10 @@ class DeviceSettingsTableCompanion
       overwriteExisting: overwriteExisting ?? this.overwriteExisting,
       transcodeFormat: transcodeFormat ?? this.transcodeFormat,
       transcodeMaxBitRate: transcodeMaxBitRate ?? this.transcodeMaxBitRate,
+      useZipDownload: useZipDownload ?? this.useZipDownload,
+      customFilenameTemplate:
+          customFilenameTemplate ?? this.customFilenameTemplate,
+      customFolderTemplate: customFolderTemplate ?? this.customFolderTemplate,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2361,6 +2515,19 @@ class DeviceSettingsTableCompanion
     if (transcodeMaxBitRate.present) {
       map['transcode_max_bit_rate'] = Variable<int>(transcodeMaxBitRate.value);
     }
+    if (useZipDownload.present) {
+      map['use_zip_download'] = Variable<bool>(useZipDownload.value);
+    }
+    if (customFilenameTemplate.present) {
+      map['custom_filename_template'] = Variable<String>(
+        customFilenameTemplate.value,
+      );
+    }
+    if (customFolderTemplate.present) {
+      map['custom_folder_template'] = Variable<String>(
+        customFolderTemplate.value,
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2379,6 +2546,9 @@ class DeviceSettingsTableCompanion
           ..write('overwriteExisting: $overwriteExisting, ')
           ..write('transcodeFormat: $transcodeFormat, ')
           ..write('transcodeMaxBitRate: $transcodeMaxBitRate, ')
+          ..write('useZipDownload: $useZipDownload, ')
+          ..write('customFilenameTemplate: $customFilenameTemplate, ')
+          ..write('customFolderTemplate: $customFolderTemplate, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3294,6 +3464,9 @@ typedef $$DeviceSettingsTableTableCreateCompanionBuilder =
       Value<bool> overwriteExisting,
       Value<String> transcodeFormat,
       Value<int?> transcodeMaxBitRate,
+      Value<bool> useZipDownload,
+      Value<String> customFilenameTemplate,
+      Value<String> customFolderTemplate,
       Value<int> rowid,
     });
 typedef $$DeviceSettingsTableTableUpdateCompanionBuilder =
@@ -3307,6 +3480,9 @@ typedef $$DeviceSettingsTableTableUpdateCompanionBuilder =
       Value<bool> overwriteExisting,
       Value<String> transcodeFormat,
       Value<int?> transcodeMaxBitRate,
+      Value<bool> useZipDownload,
+      Value<String> customFilenameTemplate,
+      Value<String> customFolderTemplate,
       Value<int> rowid,
     });
 
@@ -3361,6 +3537,21 @@ class $$DeviceSettingsTableTableFilterComposer
 
   ColumnFilters<int> get transcodeMaxBitRate => $composableBuilder(
     column: $table.transcodeMaxBitRate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get useZipDownload => $composableBuilder(
+    column: $table.useZipDownload,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customFilenameTemplate => $composableBuilder(
+    column: $table.customFilenameTemplate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get customFolderTemplate => $composableBuilder(
+    column: $table.customFolderTemplate,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3418,6 +3609,21 @@ class $$DeviceSettingsTableTableOrderingComposer
     column: $table.transcodeMaxBitRate,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get useZipDownload => $composableBuilder(
+    column: $table.useZipDownload,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customFilenameTemplate => $composableBuilder(
+    column: $table.customFilenameTemplate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get customFolderTemplate => $composableBuilder(
+    column: $table.customFolderTemplate,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DeviceSettingsTableTableAnnotationComposer
@@ -3471,6 +3677,21 @@ class $$DeviceSettingsTableTableAnnotationComposer
 
   GeneratedColumn<int> get transcodeMaxBitRate => $composableBuilder(
     column: $table.transcodeMaxBitRate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get useZipDownload => $composableBuilder(
+    column: $table.useZipDownload,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get customFilenameTemplate => $composableBuilder(
+    column: $table.customFilenameTemplate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get customFolderTemplate => $composableBuilder(
+    column: $table.customFolderTemplate,
     builder: (column) => column,
   );
 }
@@ -3527,6 +3748,9 @@ class $$DeviceSettingsTableTableTableManager
                 Value<bool> overwriteExisting = const Value.absent(),
                 Value<String> transcodeFormat = const Value.absent(),
                 Value<int?> transcodeMaxBitRate = const Value.absent(),
+                Value<bool> useZipDownload = const Value.absent(),
+                Value<String> customFilenameTemplate = const Value.absent(),
+                Value<String> customFolderTemplate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DeviceSettingsTableCompanion(
                 devicePath: devicePath,
@@ -3538,6 +3762,9 @@ class $$DeviceSettingsTableTableTableManager
                 overwriteExisting: overwriteExisting,
                 transcodeFormat: transcodeFormat,
                 transcodeMaxBitRate: transcodeMaxBitRate,
+                useZipDownload: useZipDownload,
+                customFilenameTemplate: customFilenameTemplate,
+                customFolderTemplate: customFolderTemplate,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3551,6 +3778,9 @@ class $$DeviceSettingsTableTableTableManager
                 Value<bool> overwriteExisting = const Value.absent(),
                 Value<String> transcodeFormat = const Value.absent(),
                 Value<int?> transcodeMaxBitRate = const Value.absent(),
+                Value<bool> useZipDownload = const Value.absent(),
+                Value<String> customFilenameTemplate = const Value.absent(),
+                Value<String> customFolderTemplate = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DeviceSettingsTableCompanion.insert(
                 devicePath: devicePath,
@@ -3562,6 +3792,9 @@ class $$DeviceSettingsTableTableTableManager
                 overwriteExisting: overwriteExisting,
                 transcodeFormat: transcodeFormat,
                 transcodeMaxBitRate: transcodeMaxBitRate,
+                useZipDownload: useZipDownload,
+                customFilenameTemplate: customFilenameTemplate,
+                customFolderTemplate: customFolderTemplate,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

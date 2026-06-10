@@ -59,5 +59,57 @@ void main() {
       );
       expect(s.resolvedMusicRoot, '/Volumes/USB/Music');
     });
+
+    test('joins a nested forward-slash path', () {
+      const s = DeviceSettings(
+        devicePath: '/Volumes/USB',
+        musicRootFolder: 'Music/FLAC/Library',
+      );
+      expect(s.resolvedMusicRoot, '/Volumes/USB/Music/FLAC/Library');
+    });
+
+    test('normalises a back-slash path so callers can paste Windows paths', () {
+      const s = DeviceSettings(
+        devicePath: '/Volumes/USB',
+        musicRootFolder: r'Music\FLAC',
+      );
+      expect(s.resolvedMusicRoot, '/Volumes/USB/Music/FLAC');
+    });
+
+    test('drops whitespace and empty segments', () {
+      const s = DeviceSettings(
+        devicePath: '/Volumes/USB',
+        musicRootFolder: '  Music//FLAC  ',
+      );
+      expect(s.resolvedMusicRoot, '/Volumes/USB/Music/FLAC');
+    });
+  });
+
+  group('validateMusicRootPath', () {
+    test('null for empty input', () {
+      expect(validateMusicRootPath(''), isNull);
+      expect(validateMusicRootPath('   '), isNull);
+    });
+
+    test('null for valid relative paths', () {
+      expect(validateMusicRootPath('Music'), isNull);
+      expect(validateMusicRootPath('Music/FLAC'), isNull);
+      expect(validateMusicRootPath(r'Music\FLAC'), isNull);
+    });
+
+    test('rejects leading slash', () {
+      expect(validateMusicRootPath('/Music'), isNotNull);
+      expect(validateMusicRootPath(r'\Music'), isNotNull);
+    });
+
+    test('rejects Windows drive prefix', () {
+      expect(validateMusicRootPath('C:/Music'), isNotNull);
+      expect(validateMusicRootPath(r'C:\Music'), isNotNull);
+    });
+
+    test(r"rejects '..' segments", () {
+      expect(validateMusicRootPath('Music/../Other'), isNotNull);
+      expect(validateMusicRootPath('..'), isNotNull);
+    });
   });
 }

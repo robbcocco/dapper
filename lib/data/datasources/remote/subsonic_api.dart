@@ -380,4 +380,11 @@ class SubsonicApi {
       if (maxBitRate != null && maxBitRate > 0) 'maxBitRate': maxBitRate,
     });
   }
+
+  /// Bulk download URL — `/rest/download?id=<album|artist|playlist>` returns
+  /// a zip of the originals. Navidrome does not accept transcoding options on
+  /// this endpoint, so callers must ensure the device is in original-format
+  /// mode before invoking.
+  Uri downloadZipUri(String id) =>
+      _client.buildUri(ApiConstants.download, {'id': id});
 }

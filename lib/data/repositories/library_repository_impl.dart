@@ -165,6 +165,9 @@ class LibraryRepositoryImpl implements LibraryRepository {
   Uri transferUri(String songId, {String? format, int? maxBitRate}) =>
       _api.transferUri(songId, format: format, maxBitRate: maxBitRate);
 
+  @override
+  Uri zipUri(String id) => _api.downloadZipUri(id);
+
   Artist _mapArtist(ArtistDto d) => Artist(
         id: d.id,
         name: d.name,
