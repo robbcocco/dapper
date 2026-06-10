@@ -58,6 +58,24 @@ void main() {
       client.dispose();
     });
 
+    test('preserves a base-URL subpath (reverse-proxy deployments)', () {
+      // Navidrome behind nginx at /navidrome must keep that prefix on stream
+      // and cover-art URLs — the old implementation called Uri.replace(path:)
+      // which clobbered it, breaking downloads on subpath setups.
+      final client = _client(baseUrl: 'https://music.example.com/navidrome');
+      final uri = client.buildUri('/rest/getCoverArt', {'id': 'cov-1'});
+      expect(uri.host, 'music.example.com');
+      expect(uri.path, '/navidrome/rest/getCoverArt');
+      client.dispose();
+    });
+
+    test('trailing slash on base URL does not produce a doubled slash', () {
+      final client = _client(baseUrl: 'https://music.example.com/sub/');
+      final uri = client.buildUri('/rest/ping', {});
+      expect(uri.path, '/sub/rest/ping');
+      client.dispose();
+    });
+
     test('each successive call produces a unique salt (no millisecond '
         'collisions)', () {
       final client = _client();

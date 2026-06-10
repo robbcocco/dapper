@@ -89,6 +89,13 @@ void _pruneFolder(
       manifest.songs.where((s) => !librarySongIds.contains(s.id)).toList();
   if (orphans.isEmpty) return;
 
+  // Cache the audio-file scan: the fallback title-match path used to re-scan
+  // the folder once per orphan, which was O(orphans × files). For an album
+  // where every song was orphaned this turned into an obvious quadratic.
+  List<File>? cachedAudioFiles;
+  List<File> audioFiles() => cachedAudioFiles ??=
+      folder.listSync().whereType<File>().where(isAudioFile).toList();
+
   for (final orphan in orphans) {
     File? target;
 
@@ -99,7 +106,7 @@ void _pruneFolder(
 
     if (target == null) {
       final safeTitle = orphan.title.toSafeFilename();
-      for (final f in folder.listSync().whereType<File>().where(isAudioFile)) {
+      for (final f in audioFiles()) {
         if (p.basenameWithoutExtension(f.path).contains(safeTitle)) {
           target = f;
           break;
@@ -107,15 +114,19 @@ void _pruneFolder(
       }
     }
 
+    // Only count songs that we actually deleted from disk. A manifest entry
+    // whose file is already gone (user wiped it manually, or it never made it
+    // to disk) shouldn't pad the "songs removed" total because there was
+    // nothing to remove.
     if (target != null && target.existsSync()) {
       try {
         addBytes(target.lengthSync());
         target.deleteSync();
+        addSongs(1);
       } catch (e) {
         errors.add('${p.basename(target.path)}: $e');
       }
     }
-    addSongs(1);
   }
 
   final keepSongs =

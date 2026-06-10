@@ -301,8 +301,12 @@ final albumsByGenreProvider =
 
 // ── Search ────────────────────────────────────────────────────────────────────
 
-final searchResultsProvider =
-    FutureProvider.family<SearchResults, String>((ref, query) async {
+/// autoDispose because [FutureProvider.family] keeps one cache entry per
+/// query string, and the search field rebuilds the provider on every
+/// keystroke. Without autoDispose a long session of typing leaves a chain
+/// of zombie SearchResults retained by Riverpod.
+final searchResultsProvider = FutureProvider.autoDispose
+    .family<SearchResults, String>((ref, query) async {
   final repo = ref.watch(libraryRepositoryProvider);
   if (repo == null || query.trim().isEmpty) return const SearchResults();
   return repo.searchAll(query.trim());

@@ -132,8 +132,14 @@ The heart of the app. [transfer_queue_notifier.dart](lib/application/transfer/tr
 ## Gotchas worth remembering
 
 - After editing any `@freezed` or `@JsonSerializable` class, **re-run build_runner** — `flutter analyze` errors that look like missing parts almost always trace back to this.
-- `SubsonicClient` is rebuilt whenever credentials change; the old `Dio` instance is not explicitly closed.
+- `SubsonicClient` is rebuilt whenever credentials change; the old `Dio` instance is closed by the provider's `onDispose`.
 - The Subsonic auth interceptor and `buildUri()` both regenerate salts independently — they don't share state.
+- `SubsonicClient.buildUri()` **preserves the base-URL path** (e.g. `https://host/navidrome`) so stream / coverArt / download URLs work on reverse-proxy subpath deployments. The Dio client already concats baseUrl via `BaseOptions.baseUrl`; only the manually-built URLs were affected by the old path-clobbering bug. There's a regression test in [test/datasources/remote/subsonic_client_test.dart](test/datasources/remote/subsonic_client_test.dart).
+- The Subsonic error interceptor (`_SubsonicErrorInterceptor`) maps HTTP 401/403 to `AuthException` so reverse-proxy basic-auth failures look like sign-in errors instead of generic network errors. Subsonic envelope codes 40/41 do the same. Use `handler.reject(DioException)` from `onError`, never `throw` — Dio leaves the request half-resolved otherwise.
 - Cover-art `CachedNetworkImage` keys include both `serverId` and `coverArtId` to prevent cross-server cache pollution.
+- All hot in-memory caches are LRU-bounded with promote-on-read: `SubsonicApi._coverArtUriCache` (1024 entries), `device_manifest.dart`'s `_manifestCache` (4096) and `_folderExistsCache` (8192), and `LibraryRepositoryImpl._albumCache` (50). Cap exists so huge libraries don't grow memory across long sessions.
+- `searchResultsProvider` is `FutureProvider.autoDispose.family<…, String>` — every keystroke spawns a new family entry. Without autoDispose long typing sessions retain every intermediate result. Don't drop autoDispose without also debouncing the search field.
 - Device folder structure is effectively immutable after sync — changing `DeviceSettings.folderStructure` mid-library would orphan the existing files.
 - macOS drive detector is event-driven (`async*` from EventChannel); Windows is a polling `async*` that runs forever once started — there is no explicit cancellation.
+- `pruneDevice`'s "songs removed" count only increments for orphans actually deleted from disk — manifest entries whose files were already gone don't pad the total. The orphan loop caches the folder's audio-file listing so the title-match fallback stays O(N), not O(N²).
+- `PlaybackNotifier.playArtist` sets `isBuffering=true` then fetches every album in parallel via `Future.wait`. Serial fetches used to make "play artist" feel frozen on deep discographies.

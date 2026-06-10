@@ -292,14 +292,24 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
   Future<void> playArtist(String artistId) async {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
+    // Surface the multi-album fetch as a buffering state so the play button
+    // shows a loading affordance instead of silently sitting idle. Without
+    // this users assumed nothing was happening when clicking "Play artist" on
+    // a deep discography (each getAlbum is one HTTP round-trip).
+    state = state.copyWith(isBuffering: true, clearError: true);
     try {
       final albums = await repo.getAlbumsByArtist(artistId);
-      final allSongs = <Song>[];
-      for (final album in albums) {
-        final full = await repo.getAlbum(album.id);
-        allSongs.addAll(full.songs);
+      // Fetch album details in parallel — getAlbumsByArtist returns metadata
+      // only, getAlbum returns songs. Serial fetching previously meant N
+      // sequential round-trips; parallel runs in the time of the slowest one.
+      final fullAlbums = await Future.wait(
+        albums.map((album) => repo.getAlbum(album.id)),
+      );
+      final allSongs = [for (final a in fullAlbums) ...a.songs];
+      if (allSongs.isEmpty) {
+        state = state.copyWith(isBuffering: false);
+        return;
       }
-      if (allSongs.isEmpty) return;
       await playSong(allSongs.first, queue: allSongs, index: 0);
     } catch (e) {
       dev.log('PlaybackNotifier: playArtist($artistId) failed — $e');

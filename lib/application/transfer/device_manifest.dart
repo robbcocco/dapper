@@ -125,27 +125,54 @@ class AlbumManifest {
 // Cache entry sentinel: a key present with a null value means "we already
 // checked and the file does not exist". This avoids repeated negative-lookup
 // syscalls when many rows ask about an album that's not on the device.
+//
+// Both caches are LinkedHashMap (Dart's default Map insertion-order semantics)
+// + capped via promote-on-read so that very large libraries can't grow the
+// caches without bound. The cap is generous — most users won't hit it — but
+// stops a 50,000-album scan from leaking memory permanently.
+const _kManifestCacheCap = 4096;
+const _kFolderExistsCacheCap = 8192;
 final _manifestCache = <String, AlbumManifest?>{};
 // Mirror cache for album-folder Directory.existsSync() — same access pattern,
 // same hot path inside albumSyncOnDevice.
 final _folderExistsCache = <String, bool>{};
 
+void _putManifest(String key, AlbumManifest? value) {
+  _manifestCache.remove(key);
+  _manifestCache[key] = value;
+  if (_manifestCache.length > _kManifestCacheCap) {
+    _manifestCache.remove(_manifestCache.keys.first);
+  }
+}
+
+void _putFolderExists(String key, bool value) {
+  _folderExistsCache.remove(key);
+  _folderExistsCache[key] = value;
+  if (_folderExistsCache.length > _kFolderExistsCacheCap) {
+    _folderExistsCache.remove(_folderExistsCache.keys.first);
+  }
+}
+
 AlbumManifest? readManifest(String folderPath) {
   if (_manifestCache.containsKey(folderPath)) {
-    return _manifestCache[folderPath];
+    // LRU promote-on-read so frequently-touched albums stay hot when the cap
+    // is reached.
+    final v = _manifestCache.remove(folderPath);
+    _manifestCache[folderPath] = v;
+    return v;
   }
   final file = File(p.join(folderPath, _kManifestFilename));
   if (!file.existsSync()) {
-    _manifestCache[folderPath] = null;
+    _putManifest(folderPath, null);
     return null;
   }
   try {
     final m = AlbumManifest.fromJson(
         jsonDecode(file.readAsStringSync()) as Map<String, dynamic>);
-    _manifestCache[folderPath] = m;
+    _putManifest(folderPath, m);
     return m;
   } catch (_) {
-    _manifestCache[folderPath] = null;
+    _putManifest(folderPath, null);
     return null;
   }
 }
@@ -155,9 +182,14 @@ AlbumManifest? readManifest(String folderPath) {
 /// now exists), and globally on device replug via [clearDeviceCaches].
 bool folderExistsCached(String folderPath) {
   final cached = _folderExistsCache[folderPath];
-  if (cached != null) return cached;
+  if (cached != null) {
+    // Promote-on-read for the same reason as the manifest cache.
+    _folderExistsCache.remove(folderPath);
+    _folderExistsCache[folderPath] = cached;
+    return cached;
+  }
   final exists = Directory(folderPath).existsSync();
-  _folderExistsCache[folderPath] = exists;
+  _putFolderExists(folderPath, exists);
   return exists;
 }
 
@@ -180,8 +212,8 @@ void writeManifest(String folderPath, AlbumManifest manifest) {
       const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
       flush: true);
   tmp.renameSync(target.path);
-  _manifestCache[folderPath] = manifest;
-  _folderExistsCache[folderPath] = true;
+  _putManifest(folderPath, manifest);
+  _putFolderExists(folderPath, true);
 }
 
 Future<void> _writeManifestAtomic(
@@ -192,8 +224,8 @@ Future<void> _writeManifestAtomic(
       const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
       flush: true);
   await tmp.rename(target.path);
-  _manifestCache[folderPath] = manifest;
-  _folderExistsCache[folderPath] = true;
+  _putManifest(folderPath, manifest);
+  _putFolderExists(folderPath, true);
 }
 
 void addSongToManifest(String folderPath, Song song,

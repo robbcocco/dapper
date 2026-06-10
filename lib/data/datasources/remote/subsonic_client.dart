@@ -62,6 +62,12 @@ class SubsonicClient {
   }
 
   /// Builds a URL for endpoints that are consumed directly (stream, coverArt).
+  ///
+  /// Preserves any base-URL path prefix the user configured — e.g. a Navidrome
+  /// instance reverse-proxied at `https://music.example.com/navidrome` keeps
+  /// its `/navidrome` segment instead of being silently rewritten to
+  /// `https://music.example.com/rest/...`, which used to silently break cover
+  /// art and downloads on subpath deployments.
   Uri buildUri(String path, Map<String, dynamic> extraParams) {
     final salt = _generateSalt();
     final token = _md5Hash('$_password$salt');
@@ -76,8 +82,11 @@ class SubsonicClient {
       'f': ApiConstants.responseFormat,
       ...extraParams,
     };
-    return Uri.parse(_baseUrl).replace(
-      path: path,
+    final base = Uri.parse(_baseUrl);
+    final basePath = base.path.replaceFirst(RegExp(r'/+$'), '');
+    final endpoint = path.startsWith('/') ? path : '/$path';
+    return base.replace(
+      path: '$basePath$endpoint',
       queryParameters: params.map((k, v) => MapEntry(k, v.toString())),
     );
   }
@@ -132,6 +141,26 @@ class _SubsonicErrorInterceptor extends Interceptor {
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
-    throw NetworkException(err.message ?? 'Network error');
+    // HTTP-level auth failures (e.g. a reverse proxy in front of Navidrome
+    // demanding Basic auth, or a Subsonic fork returning 401 instead of an
+    // envelope `code=40`) must reach the UI as `AuthException` so the setup
+    // page can prompt the user to re-enter credentials rather than just
+    // saying "network error".
+    final status = err.response?.statusCode;
+    if (status == 401 || status == 403) {
+      handler.reject(DioException(
+        requestOptions: err.requestOptions,
+        response: err.response,
+        error: const AuthException(),
+        type: DioExceptionType.badResponse,
+      ));
+      return;
+    }
+    handler.reject(DioException(
+      requestOptions: err.requestOptions,
+      response: err.response,
+      error: NetworkException(err.message ?? 'Network error'),
+      type: err.type,
+    ));
   }
 }

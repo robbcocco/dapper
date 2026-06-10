@@ -19,6 +19,12 @@ class SubsonicApi {
   // expire server-side, so the cached URI stays valid until this SubsonicApi
   // instance is replaced (which happens automatically on credential change
   // because subsonicApiProvider rebuilds with the new client).
+  //
+  // LRU-capped so libraries with tens of thousands of unique cover IDs (each
+  // typically requested at two sizes) don't grow the map without bound across
+  // long sessions. 1024 is generous — usual hot-set is the visible grid plus
+  // recent drill-downs.
+  static const _coverArtUriCacheCap = 1024;
   final Map<String, Uri> _coverArtUriCache = {};
 
   Future<bool> ping() async {
@@ -359,8 +365,20 @@ class SubsonicApi {
 
   Uri coverArtUri(String coverArtId, {int size = 256}) {
     final key = '$coverArtId|$size';
-    return _coverArtUriCache[key] ??= _client
+    // LRU promote-on-read: remove + re-insert so the freshest hits stay at the
+    // tail and the oldest entry is evicted when the cap is reached.
+    final cached = _coverArtUriCache.remove(key);
+    if (cached != null) {
+      _coverArtUriCache[key] = cached;
+      return cached;
+    }
+    final uri = _client
         .buildUri(ApiConstants.getCoverArt, {'id': coverArtId, 'size': size});
+    if (_coverArtUriCache.length >= _coverArtUriCacheCap) {
+      _coverArtUriCache.remove(_coverArtUriCache.keys.first);
+    }
+    _coverArtUriCache[key] = uri;
+    return uri;
   }
 
   Uri streamUri(String songId) =>
