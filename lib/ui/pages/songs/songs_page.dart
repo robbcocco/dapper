@@ -205,6 +205,9 @@ class _SongTableRow extends ConsumerWidget {
     final device = ref.watch(selectedDeviceProvider);
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
+    // Force rebuild when any manifest is written so the on-device dot
+    // updates as soon as a transfer completes, not at next route change.
+    ref.watch(manifestRevisionProvider);
     final isOnDevice = settings != null && songExistsOnDevice(song, settings);
     final isSelected = ref.watch(songSelectionProvider.select((s) =>
         s.matches(scopeKey) && s.isSelected(song.id)));

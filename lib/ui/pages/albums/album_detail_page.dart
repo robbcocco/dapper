@@ -281,6 +281,7 @@ class _AlbumSongRow extends ConsumerWidget {
     final device = ref.watch(selectedDeviceProvider);
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
+    ref.watch(manifestRevisionProvider);
     final isOnDevice = settings != null && songExistsOnDevice(song, settings);
     final isSelected = ref.watch(songSelectionProvider.select((s) =>
         s.matches(scopeKey) && s.isSelected(song.id)));

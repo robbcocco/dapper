@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../application/device/device_prune.dart';
 import '../../../application/device/device_scan.dart';
 import '../../../application/device/device_settings_notifier.dart';
+import '../../../application/device/device_tag_sanitize.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_queue_notifier.dart';
 import '../../../core/theme/color_tokens.dart';
@@ -15,6 +16,8 @@ import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/transfer_task.dart';
 import '../../../domain/repositories/library_repository.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/device_eject.dart';
+import '../../widgets/transfer_queue_grouping.dart';
 import 'device_file_browser.dart';
 import 'device_settings_dialog.dart';
 import 'library_sync_dialog.dart';
@@ -145,6 +148,16 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
                   constraints:
                       const BoxConstraints(minWidth: 32, minHeight: 32),
                   onPressed: () => _showScanDialog(context, ref, selected.path),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.eject_outlined,
+                      size: 16, color: ColorTokens.textSecondary),
+                  tooltip: 'Eject device',
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () =>
+                      ejectConnectedDevice(context, ref, selected.path),
                 ),
                 IconButton(
                   icon: const Icon(Icons.settings_outlined,
@@ -301,6 +314,10 @@ class _ScanDialogState extends State<_ScanDialog> {
   String _pruneStatus = '';
   PruneResult? _pruneResult;
 
+  bool _sanitizing = false;
+  String _sanitizeStatus = '';
+  TagSanitizeResult? _sanitizeResult;
+
   @override
   void initState() {
     super.initState();
@@ -319,6 +336,34 @@ class _ScanDialogState extends State<_ScanDialog> {
       if (mounted) setState(() => _result = result);
     } catch (e) {
       if (mounted) setState(() => _status = 'Error: $e');
+    }
+  }
+
+  Future<void> _runSanitize() async {
+    setState(() {
+      _sanitizing = true;
+      _sanitizeStatus = 'Starting…';
+    });
+    try {
+      final result = await sanitizeDeviceTags(
+        widget.settings,
+        onProgress: (msg) {
+          if (mounted) setState(() => _sanitizeStatus = msg);
+        },
+      );
+      if (mounted) {
+        setState(() {
+          _sanitizeResult = result;
+          _sanitizing = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _sanitizeStatus = 'Error: $e';
+          _sanitizing = false;
+        });
+      }
     }
   }
 
@@ -396,6 +441,7 @@ class _ScanDialogState extends State<_ScanDialog> {
                 children: [
                   _ScanStat('Albums scanned', result.albumsScanned),
                   _ScanStat('Albums with audio files', result.albumsMatched),
+                  _ScanStat('Songs on device', result.songsTotal),
                   _ScanStat('Songs matched & added to manifests',
                       result.songsMatched),
                   if (result.hasDuplicates) ...[
@@ -587,6 +633,111 @@ class _ScanDialogState extends State<_ScanDialog> {
                           child: const Text('Prune',
                               style:
                                   TextStyle(color: Colors.orange, fontSize: 12)),
+                        ),
+                      ],
+                    ),
+                  ],
+                  // ── Tag sanitize section ──────────────────────────────────
+                  const SizedBox(height: 8),
+                  const Divider(color: ColorTokens.divider),
+                  const SizedBox(height: 4),
+                  if (_sanitizeResult != null) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('FLAC files scanned',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: ColorTokens.textSecondary)),
+                          ),
+                          Text('${_sanitizeResult!.filesScanned}',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ColorTokens.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Files cleaned',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: ColorTokens.textSecondary)),
+                          ),
+                          Text('${_sanitizeResult!.filesModified}',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ColorTokens.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    if (_sanitizeResult!.errors.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          '${_sanitizeResult!.errors.length} file(s) failed',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.orange),
+                        ),
+                      ),
+                  ] else if (_sanitizing) ...[
+                    Row(
+                      children: [
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(
+                                  ColorTokens.textSecondary)),
+                        ),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(_sanitizeStatus,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  color: ColorTokens.textSecondary)),
+                        ),
+                      ],
+                    ),
+                  ] else ...[
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('Clean FLAC tags',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: ColorTokens.textPrimary)),
+                              Text(
+                                  'Strip lyrics / duplicate genres that break DAP tag parsers',
+                                  style: TextStyle(
+                                      fontSize: 11,
+                                      color: ColorTokens.textSecondary)),
+                            ],
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _runSanitize,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text('Clean',
+                              style: TextStyle(
+                                  color: ColorTokens.accent, fontSize: 12)),
                         ),
                       ],
                     ),
@@ -892,11 +1043,20 @@ class _QueueList extends ConsumerWidget {
           );
         }),
         Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            itemCount: queue.length,
-            itemBuilder: (context, i) => _TaskRow(task: queue[i]),
-          ),
+          child: Builder(builder: (_) {
+            final rows = buildQueueRows(queue);
+            return ListView.builder(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              itemCount: rows.length,
+              itemBuilder: (context, i) {
+                final row = rows[i];
+                if (row.group != null) {
+                  return _AlbumGroupRow(group: row.group!);
+                }
+                return _TaskRow(task: row.single!);
+              },
+            );
+          }),
         ),
       ],
     );
@@ -994,20 +1154,155 @@ class _TaskRow extends ConsumerWidget {
     );
   }
 
-  String _statusLabel(TransferStatus s, String? error) => switch (s) {
-        TransferStatus.queued => 'Waiting…',
-        TransferStatus.inProgress => '',
-        TransferStatus.completed => 'Done',
-        TransferStatus.failed =>
-          error == 'permission_denied' ? 'Permission denied' : (error ?? 'Failed'),
-        TransferStatus.cancelled => 'Cancelled',
-      };
+}
 
-  Color _statusColor(TransferStatus s) => switch (s) {
-        TransferStatus.completed => Colors.green,
-        TransferStatus.failed => Colors.redAccent,
-        _ => ColorTokens.textSecondary,
-      };
+String _statusLabel(TransferStatus s, String? error) => switch (s) {
+      TransferStatus.queued => 'Waiting…',
+      TransferStatus.inProgress => '',
+      TransferStatus.completed => 'Done',
+      TransferStatus.failed => error == 'permission_denied'
+          ? 'Permission denied'
+          : (error ?? 'Failed'),
+      TransferStatus.cancelled => 'Cancelled',
+    };
+
+Color _statusColor(TransferStatus s) => switch (s) {
+      TransferStatus.completed => Colors.green,
+      TransferStatus.failed => Colors.redAccent,
+      _ => ColorTokens.textSecondary,
+    };
+
+class _AlbumGroupRow extends ConsumerWidget {
+  const _AlbumGroupRow({required this.group});
+  final List<TransferTask> group;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final leader = group.firstWhere(
+      (t) => t.zipSourceId != null,
+      orElse: () => group.first,
+    );
+    final song = leader.song;
+    final artist = song.albumArtist ?? song.artist ?? 'Unknown artist';
+    final album = song.album ?? 'Unknown album';
+    final total = group.length;
+    final completed =
+        group.where((t) => t.status == TransferStatus.completed).length;
+    final status = aggregateStatus(group);
+
+    // While the zip is downloading, the engine mirrors byte progress onto
+    // every member task. Pick any in-progress member to read the leader's
+    // bytes. Combine with completed-count so the bar moves smoothly through
+    // the post-extract phase too.
+    final inProgTask =
+        group.where((t) => t.status == TransferStatus.inProgress).firstOrNull;
+    final bytes = inProgTask == null
+        ? null
+        : ref.watch(
+            transferProgressProvider.select((m) => m[inProgTask.id]),
+          );
+    double? progressValue;
+    if (status == TransferStatus.inProgress) {
+      if (bytes != null && bytes.$2 > 0) {
+        final frac = (bytes.$1 / bytes.$2).clamp(0.0, 1.0);
+        progressValue = ((completed + frac) / total).clamp(0.0, 1.0);
+      } else {
+        progressValue = total == 0 ? null : completed / total;
+      }
+    } else if (status == TransferStatus.completed) {
+      progressValue = 1.0;
+    }
+
+    // Combine errors so the user sees the first failure reason.
+    final firstError = group
+        .firstWhere(
+          (t) => t.status == TransferStatus.failed,
+          orElse: () => leader,
+        )
+        .errorMessage;
+
+    return Container(
+      height: 56,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 6),
+      decoration: const BoxDecoration(
+        border: Border(
+            bottom: BorderSide(color: ColorTokens.divider, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          _StatusIcon(status: status),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text('$artist — $album',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: ColorTokens.textPrimary),
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 3),
+                if (status == TransferStatus.inProgress ||
+                    status == TransferStatus.queued) ...[
+                  LinearProgressIndicator(
+                    value: progressValue,
+                    backgroundColor: ColorTokens.surfaceVariant,
+                    valueColor:
+                        const AlwaysStoppedAnimation(ColorTokens.accent),
+                    minHeight: 3,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '$completed / $total songs',
+                    style: const TextStyle(
+                        fontSize: 10, color: ColorTokens.textSecondary),
+                  ),
+                ] else if (status == TransferStatus.completed)
+                  Text('Done — $total songs',
+                      style: TextStyle(
+                          fontSize: 10, color: _statusColor(status)))
+                else
+                  Text(
+                    '${_statusLabel(status, firstError)} ($completed / $total)',
+                    style: TextStyle(
+                        fontSize: 10, color: _statusColor(status)),
+                  ),
+              ],
+            ),
+          ),
+          if (status == TransferStatus.queued ||
+              status == TransferStatus.inProgress)
+            IconButton(
+              icon: const Icon(Icons.close,
+                  size: 14, color: ColorTokens.textSecondary),
+              tooltip: 'Cancel album',
+              onPressed: () =>
+                  ref.read(transferQueueProvider.notifier).cancel(leader.id),
+              padding: EdgeInsets.zero,
+              constraints:
+                  const BoxConstraints(minWidth: 24, minHeight: 24),
+            )
+          else if (status == TransferStatus.failed)
+            IconButton(
+              icon: const Icon(Icons.refresh,
+                  size: 14, color: ColorTokens.textSecondary),
+              tooltip: 'Retry failed songs',
+              onPressed: () {
+                final notifier = ref.read(transferQueueProvider.notifier);
+                for (final t in group) {
+                  if (t.status == TransferStatus.failed) notifier.retry(t.id);
+                }
+              },
+              padding: EdgeInsets.zero,
+              constraints:
+                  const BoxConstraints(minWidth: 24, minHeight: 24),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StatusIcon extends StatelessWidget {

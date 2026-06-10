@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import '../../domain/models/device_settings.dart';
 import '../../domain/models/song.dart';
 import 'device_manifest.dart';
+import 'flac_tag_sanitizer.dart';
 import 'transfer_path_resolver.dart';
 
 // ── Isolate-boundary marshalling ──────────────────────────────────────────────
@@ -256,6 +257,7 @@ Future<ZipExtractResult> extractAlbumZip({
       if (removeMacosSidecars) {
         await removeMacOSSidecar(target);
       }
+      await sanitizeFlacTags(target);
 
       matchedIds.add(song.id);
       extracted.add(ExtractedSong(

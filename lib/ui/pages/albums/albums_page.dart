@@ -201,7 +201,17 @@ class _ArtistAlbumsView extends ConsumerWidget {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
     final settings = ref.read(deviceSettingsProvider(devicePath));
+    final useZip = settings.useZipDownload && !settings.isTranscoding;
     final albums = await repo.getAlbumsByArtist(artistId);
+    final queue = ref.read(transferQueueProvider.notifier);
+    if (useZip) {
+      for (final album in albums) {
+        final full = await repo.getAlbum(album.id);
+        if (full.songs.isEmpty) continue;
+        queue.enqueueZipGroup(full.id, full.songs, devicePath);
+      }
+      return;
+    }
     final allSongs = <Song>[];
     final expectedCounts = <String, int>{};
     for (final album in albums) {
@@ -211,10 +221,8 @@ class _ArtistAlbumsView extends ConsumerWidget {
       if (folder != null) expectedCounts[folder] = full.songCount;
     }
     if (allSongs.isEmpty) return;
-    ref
-        .read(transferQueueProvider.notifier)
-        .enqueue(allSongs, devicePath,
-            expectedAlbumSongCounts: expectedCounts);
+    queue.enqueue(allSongs, devicePath,
+        expectedAlbumSongCounts: expectedCounts);
   }
 }
 
@@ -493,11 +501,17 @@ class _AlbumCard extends ConsumerWidget {
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) return;
       final settings = ref.read(deviceSettingsProvider(devicePath));
-      final folder = buildAlbumFolder(album.artist, album.name, album.year, settings);
-      final expectedCounts = folder != null ? {folder: full.songCount} : null;
-      ref.read(transferQueueProvider.notifier)
-          .enqueue(full.songs, devicePath,
-              expectedAlbumSongCounts: expectedCounts);
+      final queue = ref.read(transferQueueProvider.notifier);
+      if (settings.useZipDownload && !settings.isTranscoding) {
+        queue.enqueueZipGroup(full.id, full.songs, devicePath);
+      } else {
+        final folder = buildAlbumFolder(
+            album.artist, album.name, album.year, settings);
+        final expectedCounts =
+            folder != null ? {folder: full.songCount} : null;
+        queue.enqueue(full.songs, devicePath,
+            expectedAlbumSongCounts: expectedCounts);
+      }
     } else if (result == 'playlist') {
       final full = await ref.read(albumProvider(album.id).future);
       if (full == null || !context.mounted) return;

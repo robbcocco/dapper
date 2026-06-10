@@ -46,12 +46,17 @@ class DeviceScanResult {
     required this.albumsScanned,
     required this.albumsMatched,
     required this.songsMatched,
+    required this.songsTotal,
     required this.manifestDuplicates,
     required this.fileDuplicates,
   });
   final int albumsScanned;
   final int albumsMatched;
   final int songsMatched;
+
+  /// Distinct Subsonic song IDs present on the device after the scan
+  /// (existing manifest entries + newly matched).
+  final int songsTotal;
 
   /// Same Subsonic song ID present in multiple album folders.
   final List<DeviceDuplicate> manifestDuplicates;
@@ -66,6 +71,7 @@ class DeviceScanResult {
         albumsScanned: albumsScanned,
         albumsMatched: albumsMatched,
         songsMatched: songsMatched,
+        songsTotal: songsTotal,
         manifestDuplicates: manifestDuplicates,
         fileDuplicates: fileDuplicates.where((d) => d != dup).toList(),
       );
@@ -193,6 +199,7 @@ Future<DeviceScanResult> scanDevice(
     albumsScanned: albumsScanned,
     albumsMatched: albumsMatched,
     songsMatched: songsMatched,
+    songsTotal: songFolders.length,
     manifestDuplicates: manifestDuplicates,
     fileDuplicates: fileDuplicates,
   );

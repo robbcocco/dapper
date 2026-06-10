@@ -18,6 +18,7 @@ import '../device/device_settings_notifier.dart';
 import '../providers/providers.dart';
 import 'playlist_sync_writer.dart';
 import 'device_manifest.dart';
+import 'flac_tag_sanitizer.dart';
 import 'queue_persistence.dart';
 import 'transfer_path_resolver.dart';
 import 'zip_extractor.dart';
@@ -449,6 +450,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         },
       );
       await removeMacOSSidecar(targetPath);
+      await sanitizeFlacTags(targetPath);
 
       _updateTask(task.id,
           (t) => t.copyWith(status: TransferStatus.completed));
@@ -869,6 +871,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     _manifestFutures[folderPath] = next;
     next.whenComplete(() {
       if (_manifestFutures[folderPath] == next) _manifestFutures.remove(folderPath);
+      _bumpManifestRevision();
     });
   }
 
@@ -888,7 +891,12 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     _manifestFutures[folderPath] = next;
     next.whenComplete(() {
       if (_manifestFutures[folderPath] == next) _manifestFutures.remove(folderPath);
+      _bumpManifestRevision();
     });
+  }
+
+  void _bumpManifestRevision() {
+    ref.read(manifestRevisionProvider.notifier).update((v) => v + 1);
   }
 
   void _updateTask(String id, TransferTask Function(TransferTask) update) {

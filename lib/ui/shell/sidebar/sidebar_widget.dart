@@ -15,6 +15,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/connected_device.dart';
 import '../../../domain/models/navidrome_server.dart';
+import '../../widgets/device_eject.dart';
 
 class _SearchBar extends ConsumerStatefulWidget {
   const _SearchBar();
@@ -575,6 +576,22 @@ class _DeviceItemTile extends StatelessWidget {
                       ? ColorTokens.textPrimary
                       : ColorTokens.textSecondary,
                   fontWeight: isSelected ? FontWeight.w500 : FontWeight.normal,
+                ),
+              ),
+            ),
+            // Eject button. Tap is consumed here so the InkWell row tap
+            // (which selects the device) doesn't also fire.
+            InkWell(
+              borderRadius: BorderRadius.circular(4),
+              onTap: () => ejectConnectedDevice(context, ref, device.path),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  Icons.eject_outlined,
+                  size: 14,
+                  color: isSelected
+                      ? ColorTokens.textPrimary
+                      : ColorTokens.textSecondary,
                 ),
               ),
             ),

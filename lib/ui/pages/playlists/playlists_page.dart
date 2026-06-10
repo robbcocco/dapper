@@ -206,6 +206,7 @@ class _PlaylistContent extends ConsumerWidget {
     final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
+    ref.watch(manifestRevisionProvider);
     final isOnDevice =
         settings != null && playlistExistsOnDevice(playlist, settings);
     final scopeKey = 'playlist:${playlist.id}';
@@ -452,6 +453,7 @@ class _PlaylistSongRow extends ConsumerWidget {
         return (active, !active && queued);
       }),
     );
+    ref.watch(manifestRevisionProvider);
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);
     final isSelected = ref.watch(songSelectionProvider.select((s) =>
         s.matches(scopeKey) && s.isSelected(song.id)));

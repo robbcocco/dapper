@@ -249,6 +249,12 @@ final transferQueueProvider =
 final transferProgressProvider =
     StateProvider<Map<String, (int, int)>>((ref) => const {});
 
+/// Monotonic counter bumped whenever a device .dapper.json manifest is
+/// written. Widgets that derive "is this song on the device?" from the
+/// manifest read this provider so they rebuild after a transfer completes.
+/// Cheap to watch — the value is ignored, only the change matters.
+final manifestRevisionProvider = StateProvider<int>((ref) => 0);
+
 // ── All stored device settings ────────────────────────────────────────────────
 
 final allStoredDeviceSettingsProvider =

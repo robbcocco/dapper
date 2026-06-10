@@ -1028,6 +1028,7 @@ class _AlbumSongStatusRow extends ConsumerWidget {
         return (active, !active && queued);
       }),
     );
+    ref.watch(manifestRevisionProvider);
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);
     final isSelected = ref.watch(songSelectionProvider.select((s) =>
         s.matches(scopeKey) && s.isSelected(song.id)));

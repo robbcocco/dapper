@@ -1,7 +1,7 @@
 name: dapper
 description: "Transfer music from Navidrome to your DAP — iTunes-inspired desktop app."
 publish_to: 'none'
-version: 0.2.0
+version: 1.0.0
 
 environment:
   sdk: ^3.12.0

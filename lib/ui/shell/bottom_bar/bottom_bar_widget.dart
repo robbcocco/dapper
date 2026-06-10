@@ -13,6 +13,7 @@ import '../../../domain/models/transfer_task.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/lyrics_dialog.dart';
+import '../../widgets/transfer_queue_grouping.dart';
 
 class BottomBarWidget extends StatelessWidget {
   const BottomBarWidget({super.key});
@@ -493,18 +494,28 @@ class _TransferPopupContent extends ConsumerWidget {
           ),
           const Divider(height: 1, color: ColorTokens.glassBorder),
           Expanded(
-            child: tasks.isEmpty
-                ? const Center(
-                    child: Text('No transfers',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: ColorTokens.textSecondary)),
-                  )
-                : ListView.builder(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    itemCount: tasks.length,
-                    itemBuilder: (_, i) => _TaskRow(task: tasks[i]),
-                  ),
+            child: Builder(builder: (_) {
+              if (tasks.isEmpty) {
+                return const Center(
+                  child: Text('No transfers',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: ColorTokens.textSecondary)),
+                );
+              }
+              final rows = buildQueueRows(tasks);
+              return ListView.builder(
+                padding: const EdgeInsets.only(bottom: 6),
+                itemCount: rows.length,
+                itemBuilder: (_, i) {
+                  final row = rows[i];
+                  if (row.group != null) {
+                    return _AlbumGroupRow(group: row.group!);
+                  }
+                  return _TaskRow(task: row.single!);
+                },
+              );
+            }),
           ),
         ],
       ),
@@ -580,6 +591,120 @@ class _TaskRow extends ConsumerWidget {
                 if (task.status == TransferStatus.failed)
                   Text(
                     task.errorMessage ?? 'Failed',
+                    style: const TextStyle(
+                        fontSize: 10, color: Colors.redAccent),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AlbumGroupRow extends ConsumerWidget {
+  const _AlbumGroupRow({required this.group});
+  final List<TransferTask> group;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final leader = group.firstWhere(
+      (t) => t.zipSourceId != null,
+      orElse: () => group.first,
+    );
+    final song = leader.song;
+    final artist = song.albumArtist ?? song.artist ?? 'Unknown artist';
+    final album = song.album ?? 'Unknown album';
+    final total = group.length;
+    final completed =
+        group.where((t) => t.status == TransferStatus.completed).length;
+    final status = aggregateStatus(group);
+
+    final inProgTask =
+        group.where((t) => t.status == TransferStatus.inProgress).firstOrNull;
+    final bytes = inProgTask == null
+        ? null
+        : ref.watch(
+            transferProgressProvider.select((m) => m[inProgTask.id]),
+          );
+    double? progressValue;
+    if (status == TransferStatus.inProgress) {
+      if (bytes != null && bytes.$2 > 0) {
+        final frac = (bytes.$1 / bytes.$2).clamp(0.0, 1.0);
+        progressValue = ((completed + frac) / total).clamp(0.0, 1.0);
+      } else {
+        progressValue = total == 0 ? null : completed / total;
+      }
+    } else if (status == TransferStatus.completed) {
+      progressValue = 1.0;
+    }
+
+    final (icon, iconColor) = switch (status) {
+      TransferStatus.completed => (Icons.check_circle_outline, Colors.green),
+      TransferStatus.failed => (Icons.error_outline, Colors.redAccent),
+      TransferStatus.inProgress => (Icons.sync, ColorTokens.accent),
+      _ => (Icons.schedule, ColorTokens.textSecondary),
+    };
+
+    final firstError = group
+        .firstWhere(
+          (t) => t.status == TransferStatus.failed,
+          orElse: () => leader,
+        )
+        .errorMessage;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, size: 13, color: iconColor),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$artist — $album',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: ColorTokens.textPrimary),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '$completed/$total',
+                      style: const TextStyle(
+                          fontSize: 10, color: ColorTokens.accent),
+                    ),
+                  ],
+                ),
+                if (status == TransferStatus.inProgress ||
+                    status == TransferStatus.queued)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 3),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: progressValue,
+                        minHeight: 2,
+                        backgroundColor: ColorTokens.surfaceVariant,
+                        valueColor:
+                            const AlwaysStoppedAnimation(ColorTokens.accent),
+                      ),
+                    ),
+                  ),
+                if (status == TransferStatus.failed)
+                  Text(
+                    firstError ?? 'Failed',
                     style: const TextStyle(
                         fontSize: 10, color: Colors.redAccent),
                     overflow: TextOverflow.ellipsis,

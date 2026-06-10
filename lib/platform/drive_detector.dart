@@ -11,9 +11,20 @@ import '../domain/models/connected_device.dart';
 abstract class DriveDetector {
   Stream<List<ConnectedDevice>> watchDrives();
   Future<List<ConnectedDevice>> listDrives();
+
+  /// Safely unmounts [devicePath]. Returns an [EjectResult] indicating
+  /// success or carrying the platform-specific error message.
+  Future<EjectResult> eject(String devicePath);
+
   /// Releases any background resources (timers, broadcast controllers). Safe
   /// to call multiple times.
   Future<void> dispose();
+}
+
+class EjectResult {
+  const EjectResult({required this.success, this.error});
+  final bool success;
+  final String? error;
 }
 
 DriveDetector createDriveDetector() {
@@ -40,6 +51,22 @@ class MacosDriveDetector implements DriveDetector {
   // no owner-side close, so dispose is a no-op.
   @override
   Future<void> dispose() async {}
+
+  @override
+  Future<EjectResult> eject(String devicePath) async {
+    try {
+      final result = await Process.run('diskutil', ['eject', devicePath]);
+      if (result.exitCode == 0) return const EjectResult(success: true);
+      final stderr = (result.stderr as String).trim();
+      final stdout = (result.stdout as String).trim();
+      final msg = stderr.isNotEmpty
+          ? stderr
+          : (stdout.isNotEmpty ? stdout : 'diskutil exit ${result.exitCode}');
+      return EjectResult(success: false, error: msg);
+    } catch (e) {
+      return EjectResult(success: false, error: e.toString());
+    }
+  }
 
   static List<ConnectedDevice> _parseEvent(dynamic event) {
     if (event is! List) return [];
@@ -107,6 +134,36 @@ class WindowsDriveDetector implements DriveDetector {
 
   @override
   Future<List<ConnectedDevice>> listDrives() async => _scan();
+
+  // Uses Shell.Application's Eject verb via PowerShell. The verb is
+  // asynchronous on the OS side — drives unmount within a poll cycle, which
+  // is when watchDrives() picks up the change. No admin rights required.
+  @override
+  Future<EjectResult> eject(String devicePath) async {
+    var drive = devicePath;
+    if (drive.endsWith('\\')) {
+      drive = drive.substring(0, drive.length - 1);
+    }
+    if (drive.length < 2 || drive[1] != ':') {
+      return EjectResult(
+          success: false, error: 'Invalid drive path: $devicePath');
+    }
+    final script =
+        r'$sa = New-Object -comObject Shell.Application; '
+        "\$sa.Namespace(17).ParseName('$drive').InvokeVerb('Eject')";
+    try {
+      final result = await Process.run(
+          'powershell', ['-NoProfile', '-Command', script]);
+      if (result.exitCode == 0) return const EjectResult(success: true);
+      final stderr = (result.stderr as String).trim();
+      final msg = stderr.isNotEmpty
+          ? stderr
+          : 'powershell exit ${result.exitCode}';
+      return EjectResult(success: false, error: msg);
+    } catch (e) {
+      return EjectResult(success: false, error: e.toString());
+    }
+  }
 
   static List<ConnectedDevice> _scan() {
     final result = <ConnectedDevice>[];
