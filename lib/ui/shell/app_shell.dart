@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'package:macos_window_utils/macos_window_utils.dart';
 import '../../application/library/library_notifier.dart';
 import '../../application/library/sidebar_state.dart';
 import '../../application/library/starred_notifier.dart';
+import '../../application/playback/scrobble_importer.dart';
 import '../../application/providers/providers.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/color_tokens.dart';
@@ -59,6 +61,12 @@ class AppShell extends ConsumerWidget {
       } else if (devices.length == 1) {
         ref.read(selectedDeviceProvider.notifier).state = devices.first;
       }
+
+      // Best-effort scrobble-log import for newly mounted devices. The
+      // listener internally de-dupes by path so a flapping mount doesn't
+      // submit the same plays twice in a session.
+      unawaited(
+          ref.read(scrobbleImportListenerProvider).handle(devices));
     });
 
     if (creds.isLoading) {

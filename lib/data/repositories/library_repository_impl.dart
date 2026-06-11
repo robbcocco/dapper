@@ -138,8 +138,9 @@ class LibraryRepositoryImpl implements LibraryRepository {
   Future<void> setRating(String id, int rating) => _api.setRating(id, rating);
 
   @override
-  Future<void> scrobble(String songId, {bool submission = true}) =>
-      _api.scrobble(songId, submission: submission);
+  Future<void> scrobble(String songId,
+          {bool submission = true, DateTime? time}) =>
+      _api.scrobble(songId, submission: submission, time: time);
 
   @override
   Future<Lyrics?> getLyrics(String songId) => _api.getLyrics(songId);

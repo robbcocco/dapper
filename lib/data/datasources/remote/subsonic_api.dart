@@ -332,10 +332,17 @@ class SubsonicApi {
   /// ListenBrainz when configured. Two modes per the Subsonic spec:
   ///   - submission=false → "now playing" ping (track has just started).
   ///   - submission=true  → full scrobble (track has been played enough).
-  Future<void> scrobble(String songId, {bool submission = true}) async {
+  ///
+  /// [time], when supplied, is the moment the play occurred. Used when
+  /// importing a past listen from a device's scrobbler log so the upstream
+  /// Last.fm/ListenBrainz entry carries the original timestamp rather than
+  /// "now". Subsonic expects this in milliseconds since epoch.
+  Future<void> scrobble(String songId,
+      {bool submission = true, DateTime? time}) async {
     await _client.get(ApiConstants.scrobble, params: {
       'id': songId,
       'submission': submission,
+      if (time != null) 'time': time.millisecondsSinceEpoch,
     });
   }
 

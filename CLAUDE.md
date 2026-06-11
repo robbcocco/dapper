@@ -120,6 +120,7 @@ The heart of the app. [transfer_queue_notifier.dart](lib/application/transfer/tr
 - **Navidrome (Subsonic API)** — primary backend. URL + username/password supplied by the user; multi-server supported via `ServersNotifier`.
 - **Lidarr** — optional. Used to add artists discovered via MusicBrainz lookup.
 - **MusicBrainz + Cover Art Archive** — used to find release groups and fetch album art when manually fixing album metadata. See [musicbrainz_client.dart](lib/data/datasources/remote/musicbrainz_client.dart). Static `Dio` instances are reused.
+- **Offline scrobble import** — when a device mounts, [scrobble_importer.dart](lib/application/playback/scrobble_importer.dart) scans for an AudioScrobbler 1.1 log (`.scrobbler.log`, `scrobbler.log`, `lastfm.log`, case-insensitive, root + 1 level), parses it via [scrobbler_log.dart](lib/data/datasources/local/scrobbler_log.dart), matches entries against `.dapper.json` manifests under the device's music root, submits each match through `repo.scrobble(songId, submission: true, time: <log timestamp>)`, then truncates the file. Per-device de-dupe is in-memory only (cleared on app restart). Covers Rockbox-style DAPs; vendor firmwares without a log file (Shanling M1s, Sony NW, AK) are no-ops. Result is surfaced via `scrobbleImportResultProvider` and a transient banner on the device page.
 
 ## House style
 

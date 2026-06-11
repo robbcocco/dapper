@@ -9,6 +9,7 @@ import '../../../application/device/device_prune.dart';
 import '../../../application/device/device_scan.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/device/device_tag_sanitize.dart';
+import '../../../application/playback/scrobble_importer.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_queue_notifier.dart';
 import '../../../core/theme/color_tokens.dart';
@@ -213,6 +214,9 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
               ],
             ),
           ),
+
+        // ── Scrobble import banner ──────────────────────────────────────────
+        if (selected != null) _ScrobbleImportBanner(devicePath: selected.path),
 
         // ── Tabs ─────────────────────────────────────────────────────────────
         Container(
@@ -1327,4 +1331,83 @@ class _StatusIcon extends StatelessWidget {
         TransferStatus.cancelled => const Icon(Icons.cancel_outlined,
             size: 16, color: ColorTokens.textSecondary),
       };
+}
+
+// ── Scrobble import banner ────────────────────────────────────────────────────
+//
+// Shown for ~10 s after the device-plug listener finishes an import pass.
+// Surfaces match / submit / unmatched counts so the user has visible
+// confirmation that offline plays made it back to Navidrome. Dismissible via
+// the close button; auto-clears when the user navigates away or the next
+// device-plug overwrites the result.
+class _ScrobbleImportBanner extends ConsumerWidget {
+  const _ScrobbleImportBanner({required this.devicePath});
+
+  final String devicePath;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final result = ref.watch(scrobbleImportResultProvider);
+    if (result == null || result.devicePath != devicePath) {
+      return const SizedBox.shrink();
+    }
+    if (!result.hasWork) return const SizedBox.shrink();
+
+    final accentColor = result.errors > 0
+        ? Colors.orange
+        : (result.matched == 0
+            ? ColorTokens.textSecondary
+            : ColorTokens.accent);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: accentColor.withValues(alpha: 0.08),
+          border: Border.all(color: accentColor.withValues(alpha: 0.35)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.cloud_upload_outlined, size: 14, color: accentColor),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _summarise(result),
+                style: TextStyle(fontSize: 11, color: accentColor),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => ref
+                  .read(scrobbleImportResultProvider.notifier)
+                  .state = null,
+              child: Icon(Icons.close, size: 13, color: accentColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _summarise(ScrobbleImportResult r) {
+    if (r.matched == 0) {
+      return 'Found ${r.parsed} scrobble log entr'
+          '${r.parsed == 1 ? 'y' : 'ies'} but none matched library songs.';
+    }
+    final base = 'Imported ${r.submitted} of ${r.parsed} offline play'
+        '${r.parsed == 1 ? '' : 's'} from device.';
+    if (r.unmatched > 0 && r.errors > 0) {
+      return '$base ${r.unmatched} unmatched, ${r.errors} server error'
+          '${r.errors == 1 ? '' : 's'}.';
+    }
+    if (r.unmatched > 0) {
+      return '$base ${r.unmatched} unmatched.';
+    }
+    if (r.errors > 0) {
+      return '$base ${r.errors} server error'
+          '${r.errors == 1 ? '' : 's'}.';
+    }
+    return base;
+  }
 }

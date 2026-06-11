@@ -33,7 +33,10 @@ abstract interface class LibraryRepository {
   /// Notifies the server about playback. [submission] = false is the
   /// "now playing" ping fired when a track starts; [submission] = true is
   /// the full scrobble fired once the listen threshold is reached.
-  Future<void> scrobble(String songId, {bool submission = true});
+  /// [time] is the absolute moment the play occurred — pass null for "now"
+  /// (live scrobbles) or a past DateTime for backfilled scrobbles imported
+  /// from device logs. Supported since Subsonic 1.8.0.
+  Future<void> scrobble(String songId, {bool submission = true, DateTime? time});
   /// Returns lyrics for [songId], or null if the server has none.
   Future<Lyrics?> getLyrics(String songId);
   Future<List<Genre>> getGenres();
