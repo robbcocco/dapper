@@ -333,7 +333,8 @@ class _ArtistDetailPanel extends ConsumerWidget {
                               if (lidarrConnected) ...[
                                 const SizedBox(width: 8),
                                 lidarrArtist != null
-                                    ? _LidarrBadge(lidarrArtist: lidarrArtist!)
+                                    ? _LidarrPageButton(
+                                        lidarrArtist: lidarrArtist!)
                                     : _ActionButton(
                                         icon: Icons.add,
                                         label: 'Add to Lidarr',
@@ -437,32 +438,51 @@ class _ArtistDetailPanel extends ConsumerWidget {
   }
 }
 
-// ── Lidarr badge (already in Lidarr) ─────────────────────────────────────────
-
-class _LidarrBadge extends StatelessWidget {
-  const _LidarrBadge({required this.lidarrArtist});
+// ── Lidarr page button (artist already tracked in Lidarr) ────────────────────
+//
+// Replaces the old read-only "In Lidarr" status badge with a tappable button
+// that jumps into Dapper's own Lidarr section with this artist pre-selected.
+// Sets [selectedLidarrMbidProvider] so the Lidarr page renders the detail
+// loader for this mbid, then flips [selectedSectionProvider] so the sidebar
+// reflects the new section.
+class _LidarrPageButton extends ConsumerWidget {
+  const _LidarrPageButton({required this.lidarrArtist});
   final LidarrArtist lidarrArtist;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.green.withValues(alpha: 0.1),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final mbid = lidarrArtist.mbid;
+    final canNavigate = mbid.isNotEmpty;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: canNavigate
+            ? () {
+                ref.read(selectedLidarrMbidProvider.notifier).state = mbid;
+                ref.read(selectedSectionProvider.notifier).state =
+                    SidebarSection.lidarr;
+              }
+            : null,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.check_circle_outline,
-              size: 13, color: Colors.green),
-          const SizedBox(width: 5),
-          Text(
-            'In Lidarr',
-            style: const TextStyle(fontSize: 12, color: Colors.green),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: Colors.green.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.green.withValues(alpha: 0.35)),
           ),
-        ],
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_forward, size: 13, color: Colors.green),
+              SizedBox(width: 5),
+              Text(
+                'Lidarr Page',
+                style: TextStyle(fontSize: 12, color: Colors.green),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

@@ -137,9 +137,10 @@ class _AlbumHeader extends ConsumerWidget {
                   ),
                 ),
                 if (album.artist != null)
-                  Text(album.artist!,
-                      style: const TextStyle(
-                          fontSize: 14, color: ColorTokens.accent)),
+                  _ArtistLink(
+                    artistId: album.artistId,
+                    artistName: album.artist!,
+                  ),
                 const SizedBox(height: 4),
                 Text(
                   [
@@ -242,6 +243,48 @@ class _AlbumHeader extends ConsumerWidget {
           devicePath,
           expectedAlbumSongCounts: expectedCounts,
         );
+  }
+}
+
+// ── Artist link ───────────────────────────────────────────────────────────────
+//
+// Clickable artist name in the album header. Routes the user to the Artists
+// section with this artist pre-selected. Falls back to the artist list when
+// no [artistId] is attached (a few legacy AlbumDto rows lack one).
+class _ArtistLink extends ConsumerWidget {
+  const _ArtistLink({required this.artistId, required this.artistName});
+
+  final String? artistId;
+  final String artistName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () {
+          // Order matters: clear the album drill-down before flipping the
+          // section, otherwise AlbumsPage briefly re-paints the album detail
+          // because [selectedAlbumIdProvider] is still set.
+          ref.read(selectedAlbumIdProvider.notifier).state = null;
+          if (artistId != null) {
+            ref.read(selectedArtistIdProvider.notifier).state = artistId;
+          }
+          ref.read(selectedSectionProvider.notifier).state =
+              SidebarSection.artists;
+        },
+        child: Text(
+          artistName,
+          style: const TextStyle(
+            fontSize: 14,
+            color: ColorTokens.accent,
+            decoration: TextDecoration.underline,
+            decorationColor: ColorTokens.accent,
+            decorationThickness: 0.5,
+          ),
+        ),
+      ),
+    );
   }
 }
 
