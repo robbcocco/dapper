@@ -1,4 +1,6 @@
+import 'dart:developer' as dev;
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
@@ -92,6 +94,166 @@ DeviceSettings settingsFromMap(Map<String, dynamic> m) => DeviceSettings(
       customFilenameTemplate: (m['customFilenameTemplate'] as String?) ?? '',
       customFolderTemplate: (m['customFolderTemplate'] as String?) ?? '',
     );
+
+/// Streaming variant: extracts the zip inside an isolate but fires per-song
+/// messages back to the main isolate so the UI can flip each row to
+/// "completed" as its file lands, instead of all-at-once when the isolate
+/// returns. Also batches `xattr -c` to one process per album on macOS
+/// instead of N processes (one per song) — a noticeable win for big albums.
+///
+/// [message] must be a primitive-only Map containing:
+///   * `sendPort`: SendPort used to stream messages back to the main isolate.
+///   * `args`: same payload as [extractAlbumZipMarshalled].
+///
+/// Messages emitted, all primitive Maps so they cross the isolate boundary:
+///   * `{type: 'extracted', songId, targetPath, expectedCount}` per matched
+///     entry as it lands on disk.
+///   * `{type: 'skipped', reason}` per skipped entry (no match, traversal,
+///     etc.) for logging on the main isolate.
+///   * `{type: 'done'}` after the entry loop and the batched sidecar pass
+///     finish — signals the listener to stop.
+Future<void> extractAlbumZipStreaming(Map<String, dynamic> message) async {
+  final sendPort = message['sendPort'] as SendPort;
+  final args = message['args'] as Map<String, dynamic>;
+  final removeMacosSidecars =
+      (args['removeMacosSidecars'] as bool?) ?? false;
+
+  try {
+    final songs = (args['songs'] as List)
+        .cast<Map>()
+        .map((m) => songFromMap(Map<String, dynamic>.from(m)))
+        .toList();
+    final settings =
+        settingsFromMap(Map<String, dynamic>.from(args['settings'] as Map));
+    final zipPath = args['zipPath'] as String;
+
+    final expectedPerFolder = <String, int>{};
+    for (final song in songs) {
+      final folder = buildAlbumFolder(
+        song.albumArtist ?? song.artist,
+        song.album ?? 'Unknown Album',
+        song.year,
+        settings,
+      );
+      if (folder == null) continue;
+      expectedPerFolder[folder] = (expectedPerFolder[folder] ?? 0) + 1;
+    }
+
+    final rootNorm = p.normalize(settings.resolvedMusicRoot);
+    final matchedIds = <String>{};
+    final extractedPaths = <String>[];
+
+    final input = InputFileStream(zipPath);
+    try {
+      final archive = ZipDecoder().decodeBuffer(input);
+      for (final entry in archive) {
+        if (!entry.isFile) continue;
+        final name = entry.name;
+        if (name.contains('..')) {
+          sendPort.send({'type': 'skipped', 'reason': 'parent traversal: $name'});
+          continue;
+        }
+        final song = matchZipEntry(name, songs);
+        if (song == null) {
+          sendPort.send({'type': 'skipped', 'reason': 'no match: $name'});
+          continue;
+        }
+        if (matchedIds.contains(song.id)) continue;
+
+        final target = buildSongPath(song, settings);
+        if (!p.isWithin(rootNorm, p.normalize(target))) {
+          sendPort.send({
+            'type': 'skipped',
+            'reason': 'escaped music root: $target',
+          });
+          continue;
+        }
+        final expectedCount = expectedPerFolder[p.dirname(target)];
+
+        if (!settings.overwriteExisting && await File(target).exists()) {
+          matchedIds.add(song.id);
+          extractedPaths.add(target);
+          sendPort.send({
+            'type': 'extracted',
+            'songId': song.id,
+            'targetPath': target,
+            'expectedCount': expectedCount,
+          });
+          continue;
+        }
+
+        await Directory(p.dirname(target)).create(recursive: true);
+        final output = OutputFileStream(target);
+        var ok = false;
+        try {
+          entry.writeContent(output);
+          ok = true;
+        } catch (e) {
+          sendPort.send({
+            'type': 'skipped',
+            'reason': 'write failed for $name: $e',
+          });
+        }
+        await output.close();
+        if (!ok) {
+          try {
+            final f = File(target);
+            if (await f.exists()) await f.delete();
+          } catch (_) {}
+          continue;
+        }
+
+        matchedIds.add(song.id);
+        extractedPaths.add(target);
+        sendPort.send({
+          'type': 'extracted',
+          'songId': song.id,
+          'targetPath': target,
+          'expectedCount': expectedCount,
+        });
+      }
+    } finally {
+      await input.close();
+    }
+
+    // Batched sidecar removal: one xattr process for the whole album, plus
+    // direct deletion of any `._*` AppleDouble files. Cuts the per-file
+    // xattr fork cost from ~15ms × N down to one ~15ms process.
+    if (removeMacosSidecars && extractedPaths.isNotEmpty) {
+      await _removeMacOSSidecarsBatch(extractedPaths);
+    }
+  } catch (e, st) {
+    sendPort.send({'type': 'error', 'message': '$e\n$st'});
+  } finally {
+    sendPort.send({'type': 'done'});
+  }
+}
+
+/// Removes the `._filename` AppleDouble for each target, then clears xattrs
+/// for the whole batch via a single `xattr -c file1 file2 ...` invocation.
+Future<void> _removeMacOSSidecarsBatch(List<String> targetPaths) async {
+  if (!Platform.isMacOS) return;
+  // Delete AppleDouble sidecars in parallel — they may exist or not.
+  await Future.wait(targetPaths.map((target) async {
+    final sidecar =
+        File(p.join(p.dirname(target), '._${p.basename(target)}'));
+    if (await sidecar.exists()) {
+      try {
+        await sidecar.delete();
+      } catch (_) {}
+    }
+  }));
+  try {
+    final result = await Process.run('xattr', ['-c', ...targetPaths]);
+    if (result.exitCode != 0) {
+      dev.log(
+          '_removeMacOSSidecarsBatch: xattr -c exited ${result.exitCode}: '
+          '${result.stderr}');
+    }
+  } catch (e) {
+    dev.log('_removeMacOSSidecarsBatch: failed to invoke xattr — $e');
+  }
+}
 
 /// Isolate-entry wrapper that takes & returns only Map/List/String/int/bool
 /// values so the `Isolate.run` boundary never has to serialise a Freezed

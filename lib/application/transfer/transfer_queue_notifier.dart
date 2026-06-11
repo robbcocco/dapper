@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:developer' as dev;
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -624,57 +625,82 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
           });
         },
       );
-      // Drop the mirrored progress entries before extract phase — siblings
-      // transition to "completed" individually as their files land.
-      ref.read(transferProgressProvider.notifier).update((m) {
-        final next = Map<String, (int, int)>.of(m);
-        for (final id in memberIds) {
-          next.remove(id);
-        }
-        return next;
-      });
-
-      // Run extraction in a background isolate so decompression doesn't
-      // block the UI. Use `compute` (top-level function reference) instead
-      // of `Isolate.run` (closure) — Flutter macOS AOT builds reject the
-      // closure-transfer protocol with "Invalid argument(s): Illegal
-      // argument in isolate". Inputs / outputs are passed as plain Map /
-      // List / primitives — see extractAlbumZipMarshalled.
+      // Streaming extraction in a background isolate. Each matched entry
+      // arrives as a primitive Map on the ReceivePort so the engine can
+      // flip that one sibling to "completed" the moment its file lands on
+      // disk — instead of waiting for the whole album to extract before any
+      // row moves. Mirror progress entries stay in place until the sibling's
+      // own message arrives so each row's bar stays at 100% (rather than
+      // briefly going indeterminate) right up until the row marks done.
       final args = <String, dynamic>{
         'zipPath': tmpZip.path,
         'songs': [for (final s in expectedSongs) songToMap(s)],
         'settings': settingsToMap(settings),
         'removeMacosSidecars': Platform.isMacOS,
       };
-      final raw = await compute(extractAlbumZipMarshalled, args);
 
-      final skipped = List<String>.from(raw['skipped'] as List);
-      for (final reason in skipped) {
-        dev.log('zip: $reason');
-      }
-      final extractedRaw = (raw['extracted'] as List).cast<Map>();
-      final result = ZipExtractResult(
-        extracted: [
-          for (final m in extractedRaw)
-            ExtractedSong(
-              songId: m['songId'] as String,
-              targetPath: m['targetPath'] as String,
-              expectedCount: m['expectedCount'] as int?,
-            ),
-        ],
-        skipped: skipped,
+      final receivePort = ReceivePort();
+      final isolate = await Isolate.spawn(
+        extractAlbumZipStreaming,
+        <String, dynamic>{'sendPort': receivePort.sendPort, 'args': args},
+        errorsAreFatal: true,
       );
 
-      // Apply per-extracted updates on the main isolate (Riverpod state +
-      // manifest writes can't cross isolates).
-      //
-      // Batched on purpose:
-      //   * state mutation: one .map() pass that resolves every task's new
-      //     status, instead of N `_updateTask` calls each doing its own pass.
-      //     That collapses O(N²) work into O(N).
-      //   * manifests: grouped per album folder so we read+write each
-      //     folder's `.dapper.json` once, no matter how many songs landed
-      //     into it.
+      final completedIds = <String>{};
+      final byFolder = <String, List<({Song song, String filename})>>{};
+      final folderExpected = <String, int?>{};
+      final writeFailures = <String>{};
+      var hadError = false;
+      String? errorMessage;
+
+      try {
+        await for (final msg in receivePort) {
+          if (msg is! Map) continue;
+          final type = msg['type'];
+          if (type == 'extracted') {
+            final songId = msg['songId'] as String;
+            final targetPath = msg['targetPath'] as String;
+            final expectedCount = msg['expectedCount'] as int?;
+            final sibling = groupTasks
+                .firstWhere((t) => t.song.id == songId);
+
+            // Flip this one sibling — small, frequent state mutations are
+            // fine here because each row's .select() lookup makes the
+            // resulting rebuild cost proportional to one row, not N.
+            _updateTask(sibling.id,
+                (t) => t.copyWith(status: TransferStatus.completed));
+            completedIds.add(sibling.id);
+
+            // Drop just this sibling's mirror progress entry — the others
+            // stay at 100% pending their own messages.
+            ref.read(transferProgressProvider.notifier).update((m) {
+              if (!m.containsKey(sibling.id)) return m;
+              return Map.of(m)..remove(sibling.id);
+            });
+
+            final folder = p.dirname(targetPath);
+            byFolder.putIfAbsent(folder, () => []).add(
+                  (song: sibling.song, filename: p.basename(targetPath)),
+                );
+            folderExpected[folder] = expectedCount;
+          } else if (type == 'skipped') {
+            final reason = msg['reason'] as String;
+            dev.log('zip: $reason');
+            if (reason.startsWith('write failed')) {
+              writeFailures.add(reason);
+            }
+          } else if (type == 'error') {
+            hadError = true;
+            errorMessage = msg['message'] as String?;
+          } else if (type == 'done') {
+            receivePort.close();
+            break;
+          }
+        }
+      } finally {
+        receivePort.close();
+        isolate.kill(priority: Isolate.immediate);
+      }
 
       if (cancelToken.isCancelled) {
         state = state
@@ -687,36 +713,21 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         return;
       }
 
-      // Collect per-folder manifest payloads and per-task status outcomes
-      // before mutating state.
-      final byFolder =
-          <String, List<({Song song, String filename})>>{};
-      final completedIds = <String>{};
-      final folderExpected = <String, int?>{};
-      for (final item in result.extracted) {
-        final sibling = groupTasks
-            .firstWhere((t) => t.song.id == item.songId);
-        completedIds.add(sibling.id);
-        final folder = p.dirname(item.targetPath);
-        byFolder
-            .putIfAbsent(folder, () => [])
-            .add((song: sibling.song, filename: p.basename(item.targetPath)));
-        folderExpected[folder] = item.expectedCount;
+      if (hadError) {
+        _failGroup(groupId, errorMessage ?? 'Extract failed');
+        return;
       }
 
-      // Any sibling not matched by an entry → failed. Surface per-write
-      // failures (e.g. corrupt entry) in the task's error message instead of
-      // a generic "Not found" so the user can tell apart actual misses from
-      // extraction errors.
-      final writeFailures = <String>{};
-      for (final reason in result.skipped) {
-        if (reason.startsWith('write failed')) {
-          writeFailures.add(reason);
-        }
+      // Per-folder manifest write — one read+write each, regardless of N.
+      for (final entry in byFolder.entries) {
+        _appendManifestBatch(entry.key, entry.value,
+            expectedSongCount: folderExpected[entry.key]);
       }
+
+      // Any sibling not matched by an entry → failed.
       final failedIdToMessage = <String, String>{};
       for (final t in groupTasks) {
-        if (result.matchedSongIds.contains(t.song.id)) continue;
+        if (completedIds.contains(t.id)) continue;
         if (t.status == TransferStatus.completed) continue;
         final perEntryError = writeFailures.firstWhere(
           (r) => r.contains(t.song.title),
@@ -725,24 +736,13 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         failedIdToMessage[t.id] =
             perEntryError.isNotEmpty ? perEntryError : 'Not found in album zip';
       }
-
-      // Single state mutation for the whole group.
-      state = state.map((t) {
-        if (completedIds.contains(t.id)) {
-          return t.copyWith(status: TransferStatus.completed);
-        }
-        final failMsg = failedIdToMessage[t.id];
-        if (failMsg != null) {
+      if (failedIdToMessage.isNotEmpty) {
+        state = state.map((t) {
+          final msg = failedIdToMessage[t.id];
+          if (msg == null) return t;
           return t.copyWith(
-              status: TransferStatus.failed, errorMessage: failMsg);
-        }
-        return t;
-      }).toList();
-
-      // Per-folder manifest write — one read+write each, regardless of N.
-      for (final entry in byFolder.entries) {
-        _appendManifestBatch(entry.key, entry.value,
-            expectedSongCount: folderExpected[entry.key]);
+              status: TransferStatus.failed, errorMessage: msg);
+        }).toList();
       }
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) {
