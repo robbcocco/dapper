@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -5,7 +6,7 @@ import 'package:path/path.dart' as p;
 import '../../core/extensions/string_extensions.dart';
 import '../../domain/models/device_settings.dart';
 import '../../domain/models/playlist.dart';
-import 'device_manifest.dart';
+import '../../platform/device_fs.dart';
 import 'transfer_path_resolver.dart';
 
 String buildPlaylistPath(Playlist playlist, DeviceSettings settings) {
@@ -17,6 +18,7 @@ String buildPlaylistPath(Playlist playlist, DeviceSettings settings) {
 Future<void> writePlaylistM3u(
   Playlist playlist,
   DeviceSettings settings,
+  DeviceFs fs,
 ) async {
   final playlistPath = buildPlaylistPath(playlist, settings);
   final playlistDir = p.dirname(playlistPath);
@@ -26,7 +28,7 @@ Future<void> writePlaylistM3u(
   var count = 0;
   for (final song in playlist.songs) {
     final songPath = buildSongPath(song, settings);
-    if (!await File(songPath).exists()) continue;
+    if (!await fs.exists(songPath)) continue;
     count++;
     // Use forward-slash separators (M1S is Android-based).
     final rel = p.relative(songPath, from: playlistDir).replaceAll(r'\', '/');
@@ -40,10 +42,23 @@ Future<void> writePlaylistM3u(
 
   if (count == 0) return;
 
-  await Directory(playlistDir).create(recursive: true);
-  await File(playlistPath).writeAsString(buf.toString());
-  await removeMacOSSidecar(playlistPath);
+  await fs.mkdirp(playlistDir);
+  final handle = await fs.openWrite(playlistPath);
+  try {
+    await handle.write(utf8.encode(buf.toString()));
+    await handle.close();
+  } catch (e) {
+    await handle.abort();
+    rethrow;
+  }
+  await fs.removeSidecar(playlistPath);
 }
 
+/// Sync filesystem-only existence check.
+///
+/// Called from widget build methods that can't await — keeping it sync via
+/// `dart:io` matches the existing sync hot-path pattern (`songFileExistsOnDevice`
+/// etc.). MTP-aware existence will route through a cache facade in a later
+/// pass; until then, MTP devices simply report "absent" here.
 bool playlistExistsOnDevice(Playlist playlist, DeviceSettings settings) =>
     File(buildPlaylistPath(playlist, settings)).existsSync();

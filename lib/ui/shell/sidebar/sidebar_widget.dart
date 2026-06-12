@@ -15,6 +15,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/connected_device.dart';
 import '../../../domain/models/navidrome_server.dart';
+import '../../../platform/device_fs.dart';
 import '../../widgets/device_eject.dart';
 
 class _SearchBar extends ConsumerStatefulWidget {
@@ -560,7 +561,9 @@ class _DeviceItemTile extends StatelessWidget {
         child: Row(
           children: [
             Icon(
-              Icons.usb,
+              device.protocol == DeviceProtocol.mtp
+                  ? Icons.phone_android
+                  : Icons.usb,
               size: 16,
               color:
                   isSelected ? ColorTokens.accent : ColorTokens.textSecondary,

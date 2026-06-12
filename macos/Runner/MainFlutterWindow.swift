@@ -11,6 +11,8 @@ class MainFlutterWindow: NSWindow {
     RegisterGeneratedPlugins(registry: flutterViewController)
     DriveDetectorPlugin.register(
       with: flutterViewController.registrar(forPlugin: "DriveDetectorPlugin"))
+    MtpPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "MtpPlugin"))
 
     super.awakeFromNib()
   }

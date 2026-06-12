@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as dev;
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -8,6 +8,7 @@ import '../../data/datasources/local/scrobbler_log.dart';
 import '../../domain/models/connected_device.dart';
 import '../../domain/models/device_settings.dart';
 import '../../domain/repositories/library_repository.dart';
+import '../../platform/device_fs.dart';
 import '../device/device_settings_notifier.dart';
 import '../providers/providers.dart';
 import '../transfer/device_manifest.dart';
@@ -72,9 +73,10 @@ Future<ScrobbleImportResult> importScrobblesFor({
   required String devicePath,
   required DeviceSettings settings,
   required LibraryRepository repo,
+  required DeviceFs fs,
 }) async {
-  final logFile = await findScrobblerLog(devicePath);
-  if (logFile == null) {
+  final logPath = await findScrobblerLog(devicePath, fs);
+  if (logPath == null) {
     return ScrobbleImportResult(
       devicePath: devicePath,
       parsed: 0,
@@ -87,9 +89,13 @@ Future<ScrobbleImportResult> importScrobblesFor({
 
   final String contents;
   try {
-    contents = await logFile.readAsString();
+    final bytes = <int>[];
+    await for (final chunk in await fs.openRead(logPath)) {
+      bytes.addAll(chunk);
+    }
+    contents = utf8.decode(bytes, allowMalformed: true);
   } catch (e) {
-    dev.log('importScrobblesFor: could not read ${logFile.path} — $e');
+    dev.log('importScrobblesFor: could not read $logPath — $e');
     return ScrobbleImportResult(
       devicePath: devicePath,
       parsed: 0,
@@ -104,7 +110,7 @@ Future<ScrobbleImportResult> importScrobblesFor({
   if (entries.isEmpty) {
     // Truncate anyway — header-only or all-skipped logs would otherwise be
     // re-scanned on every replug.
-    await truncateScrobblerLog(logFile);
+    await truncateScrobblerLog(logPath, fs);
     return ScrobbleImportResult(
       devicePath: devicePath,
       parsed: 0,
@@ -115,7 +121,7 @@ Future<ScrobbleImportResult> importScrobblesFor({
     );
   }
 
-  final index = await _buildLibraryIndex(settings);
+  final index = await _buildLibraryIndex(settings, fs);
 
   int matched = 0;
   int submitted = 0;
@@ -139,7 +145,7 @@ Future<ScrobbleImportResult> importScrobblesFor({
   // for a retry on the next mount if the server was unreachable for some
   // entries — better than silently dropping plays.
   if (errors == 0) {
-    await truncateScrobblerLog(logFile);
+    await truncateScrobblerLog(logPath, fs);
   }
 
   return ScrobbleImportResult(
@@ -157,13 +163,14 @@ Future<ScrobbleImportResult> importScrobblesFor({
 /// for the standard structures; custom structures with arbitrary depth fall
 /// through to a one-extra-level descent so albumArtist/album-year layouts
 /// still work without a recursive walk of the whole device.
-Future<Map<String, String>> _buildLibraryIndex(DeviceSettings settings) async {
+Future<Map<String, String>> _buildLibraryIndex(
+    DeviceSettings settings, DeviceFs fs) async {
   final index = <String, String>{};
-  final root = Directory(settings.resolvedMusicRoot);
-  if (!await root.exists()) return index;
+  final root = fs.resolveMusicRoot(settings);
+  if (!await fs.isDir(root)) return index;
 
-  Future<void> consumeFolder(Directory folder) async {
-    final manifest = readManifest(folder.path);
+  void consumeFolder(String folderPath) {
+    final manifest = readManifest(folderPath);
     if (manifest == null) return;
     for (final song in manifest.songs) {
       final artist = song.artist ?? '';
@@ -176,24 +183,27 @@ Future<Map<String, String>> _buildLibraryIndex(DeviceSettings settings) async {
   }
 
   try {
-    await for (final lvl1 in root.list(followLinks: false)) {
-      if (lvl1 is! Directory) continue;
-      await consumeFolder(lvl1);
+    final lvl1 = await fs.list(root);
+    for (final entry1 in lvl1) {
+      if (!entry1.isDir) continue;
+      consumeFolder(entry1.path);
       try {
-        await for (final lvl2 in lvl1.list(followLinks: false)) {
-          if (lvl2 is! Directory) continue;
-          await consumeFolder(lvl2);
+        final lvl2 = await fs.list(entry1.path);
+        for (final entry2 in lvl2) {
+          if (!entry2.isDir) continue;
+          consumeFolder(entry2.path);
           // One more level for year-nested or disc-nested custom templates.
           try {
-            await for (final lvl3 in lvl2.list(followLinks: false)) {
-              if (lvl3 is Directory) await consumeFolder(lvl3);
+            final lvl3 = await fs.list(entry2.path);
+            for (final entry3 in lvl3) {
+              if (entry3.isDir) consumeFolder(entry3.path);
             }
           } catch (_) {}
         }
       } catch (_) {}
     }
   } catch (e) {
-    dev.log('_buildLibraryIndex: walk of ${root.path} failed — $e');
+    dev.log('_buildLibraryIndex: walk of $root failed — $e');
   }
   return index;
 }
@@ -241,11 +251,13 @@ class ScrobbleImportListener {
       // Resolve persisted settings synchronously via the Notifier so the
       // user's configured music-root subfolder is honoured.
       final settings = _ref.read(deviceSettingsProvider(d.path));
+      final fs = _ref.read(deviceFsProvider(d.path));
       try {
         final result = await importScrobblesFor(
           devicePath: d.path,
           settings: settings,
           repo: repo,
+          fs: fs,
         );
         if (result.hasWork) {
           _ref.read(scrobbleImportResultProvider.notifier).state = result;

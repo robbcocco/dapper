@@ -14,9 +14,11 @@ import '../../domain/models/device_settings.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/song.dart';
 import '../../domain/models/transfer_task.dart';
-import '../../platform/disk_space.dart';
+import '../../platform/device_fs.dart';
+import '../../platform/local_device_fs.dart';
 import '../device/device_settings_notifier.dart';
 import '../providers/providers.dart';
+import 'device_cache_warm.dart';
 import 'playlist_sync_writer.dart';
 import 'device_manifest.dart';
 import 'flac_tag_sanitizer.dart';
@@ -109,7 +111,22 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     // changes — a different mount could coincidentally reuse the same root
     // and a stale "exists" entry would mislead the UI.
     ref.listen<ConnectedDevice?>(selectedDeviceProvider, (prev, next) {
-      if (prev?.path != next?.path) clearDeviceCaches();
+      if (prev?.path == next?.path) return;
+      clearDeviceCaches();
+      // For MTP devices the sync UI selectors (which use `dart:io`) report
+      // "absent" until a successful transfer fills the in-memory cache.
+      // Kick off a one-shot manifest walk through DeviceFs so badges reflect
+      // reality right after device selection. Bumps manifestRevisionProvider
+      // when complete so widgets watching it rebuild.
+      if (next != null && next.protocol == DeviceProtocol.mtp) {
+        final fs = ref.read(deviceFsProvider(next.path));
+        final settings = ref.read(deviceSettingsProvider(next.path));
+        unawaited(warmDeviceManifestCache(fs, settings).then((count) {
+          if (count > 0) _bumpManifestRevision();
+        }, onError: (Object e) {
+          dev.log('TransferQueueNotifier: warmDeviceManifestCache failed — $e');
+        }));
+      }
     });
 
     return restored;
@@ -392,19 +409,20 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
     try {
       final settings = ref.read(deviceSettingsProvider(task.devicePath));
+      final fs = ref.read(deviceFsProvider(task.devicePath));
       final targetPath = buildSongPath(task.song, settings);
 
-      if (!settings.overwriteExisting && await File(targetPath).exists()) {
+      if (!settings.overwriteExisting && await fs.exists(targetPath)) {
         _updateTask(
             task.id, (t) => t.copyWith(status: TransferStatus.completed));
         final albumFolder = p.dirname(targetPath);
-        _appendManifest(albumFolder, task.song,
+        _appendManifest(albumFolder, task.devicePath, task.song,
             expectedSongCount: _expectedSongCounts[albumFolder],
             filename: p.basename(targetPath));
         return; // finally handles group tracking
       }
 
-      await Directory(p.dirname(targetPath)).create(recursive: true);
+      await fs.mkdirp(p.dirname(targetPath));
 
       // URL is computed at execution time so transcoding-setting changes
       // applied between enqueue and run take effect on later tasks. If the
@@ -429,35 +447,42 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       // common for on-the-fly transcoded responses. Without this the UI
       // sits at 0% for the entire transfer.
       final estimatedTotal = _estimateTotalBytes(task.song, settings);
-      await _dio.download(
-        url,
-        targetPath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          // Prefer the server-supplied total; fall back to our estimate so
-          // transcoded downloads show progress too.
-          final effectiveTotal = total > 0 ? total : estimatedTotal;
-          if (effectiveTotal <= 0) return;
-          // Throttle to ~200 ms. Only updates the lightweight progress
-          // provider — the main task state is untouched until completion.
-          final now = DateTime.now().millisecondsSinceEpoch;
-          if ((now - (_lastProgressMs[task.id] ?? 0)) < 200) return;
-          _lastProgressMs[task.id] = now;
-          // Clamp received to total so the bar can't briefly read >100% if
-          // the estimate is too pessimistic.
-          final clamped = received > effectiveTotal ? effectiveTotal : received;
-          ref.read(transferProgressProvider.notifier).update(
-              (m) => {...m, task.id: (clamped, effectiveTotal)});
-        },
-      );
-      await removeMacOSSidecar(targetPath);
-      await sanitizeFlacTags(targetPath);
+      if (fs.protocol == DeviceProtocol.filesystem) {
+        await _dio.download(
+          url,
+          targetPath,
+          cancelToken: cancelToken,
+          onReceiveProgress: (received, total) {
+            _reportProgress(task.id, received, total, estimatedTotal);
+          },
+        );
+      } else {
+        // MTP: cannot pass a path to Dio. Stream the response body through
+        // a [WriteHandle] which the MTP impl pumps over the native plugin
+        // chunk by chunk.
+        await _streamedDownload(
+          url: url,
+          fs: fs,
+          targetPath: targetPath,
+          taskId: task.id,
+          estimatedTotal: estimatedTotal,
+          cancelToken: cancelToken,
+        );
+      }
+      await fs.removeSidecar(targetPath);
+      // FLAC tag sanitize is an in-place RandomAccessFile rewrite — only
+      // valid on a real filesystem. MTP devices skip it (no in-place write
+      // semantics over MTP).
+      if (fs.protocol == DeviceProtocol.filesystem) {
+        await sanitizeFlacTags(targetPath);
+      }
 
       _updateTask(task.id,
           (t) => t.copyWith(status: TransferStatus.completed));
       final albumFolder = p.dirname(targetPath);
       _appendManifest(
         albumFolder,
+        task.devicePath,
         task.song,
         expectedSongCount: _expectedSongCounts[albumFolder],
         filename: p.basename(targetPath),
@@ -506,6 +531,18 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     // The zip endpoint always returns originals — transcoded modes must fall
     // back to per-song. Convert siblings to plain tasks and bail out.
     if (settings.isTranscoding) {
+      _convertGroupToSongTasks(groupId);
+      return;
+    }
+
+    // MTP devices cannot stream zip extraction directly to the device (the
+    // isolate writes via `OutputFileStream` to filesystem paths). Falling
+    // back to per-song downloads runs each one through `_executeSong`'s
+    // streamed-write path (see `_streamedDownload`). The UI hides the bulk-
+    // zip toggle for MTP, so this branch is the safety net for any in-
+    // flight zip-group that was enqueued before a device-protocol switch.
+    final fs = ref.read(deviceFsProvider(devicePath));
+    if (fs.protocol == DeviceProtocol.mtp) {
       _convertGroupToSongTasks(groupId);
       return;
     }
@@ -570,8 +607,9 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       // user sees a clean error up-front rather than mid-download. Null means
       // the platform query failed — fall back to letting Dio surface ENOSPC.
       if (estimatedTotal > 0) {
-        final tmpFree = await freeBytesAt(supportDir);
-        final deviceFree = await freeBytesAt(devicePath);
+        final fs = ref.read(deviceFsProvider(devicePath));
+        final tmpFree = await _supportDirFree(supportDir);
+        final deviceFree = await fs.freeBytes();
         // df can take ~50ms; if the user cancelled in that window the rest
         // of this function would otherwise march ahead and start a download.
         if (cancelToken.isCancelled) {
@@ -720,7 +758,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
       // Per-folder manifest write — one read+write each, regardless of N.
       for (final entry in byFolder.entries) {
-        _appendManifestBatch(entry.key, entry.value,
+        _appendManifestBatch(entry.key, devicePath, entry.value,
             expectedSongCount: folderExpected[entry.key]);
       }
 
@@ -778,6 +816,84 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
           await tmpZip.delete();
         } catch (_) {}
       }
+    }
+  }
+
+  /// Streamed-download path for MTP devices. Uses Dio's stream-response
+  /// mode and pumps chunks through a [WriteHandle] so the native MTP plugin
+  /// can drive `putBegin`/`putChunk`/`putCommit`. The filesystem path keeps
+  /// the simpler `Dio.download(url, savePath)` because it's faster and the
+  /// behavior is well-tested.
+  Future<void> _streamedDownload({
+    required String url,
+    required DeviceFs fs,
+    required String targetPath,
+    required String taskId,
+    required int estimatedTotal,
+    required CancelToken cancelToken,
+  }) async {
+    final response = await _dio.get<ResponseBody>(
+      url,
+      options: Options(responseType: ResponseType.stream),
+      cancelToken: cancelToken,
+    );
+    final body = response.data;
+    if (body == null) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        error: 'Empty response body',
+      );
+    }
+    final declared = int.tryParse(
+            response.headers.value(Headers.contentLengthHeader) ?? '') ??
+        0;
+    final handle = await fs.openWrite(targetPath,
+        totalBytes: declared > 0 ? declared : estimatedTotal);
+    var received = 0;
+    var committed = false;
+    try {
+      await for (final chunk in body.stream) {
+        if (cancelToken.isCancelled) {
+          throw DioException(
+            requestOptions: response.requestOptions,
+            type: DioExceptionType.cancel,
+            error: 'cancelled',
+          );
+        }
+        await handle.write(chunk);
+        received += chunk.length;
+        _reportProgress(taskId, received, declared, estimatedTotal);
+      }
+      await handle.close();
+      committed = true;
+    } finally {
+      if (!committed) await handle.abort();
+    }
+  }
+
+  /// Shared progress reporter used by both filesystem and MTP download
+  /// paths. Throttled to ~200 ms via [_lastProgressMs].
+  void _reportProgress(
+      String taskId, int received, int total, int estimatedTotal) {
+    final effectiveTotal = total > 0 ? total : estimatedTotal;
+    if (effectiveTotal <= 0) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if ((now - (_lastProgressMs[taskId] ?? 0)) < 200) return;
+    _lastProgressMs[taskId] = now;
+    final clamped = received > effectiveTotal ? effectiveTotal : received;
+    ref.read(transferProgressProvider.notifier).update(
+        (m) => {...m, taskId: (clamped, effectiveTotal)});
+  }
+
+  /// Free bytes for the local app-support tmp dir. Kept separate from
+  /// [DeviceFs.freeBytes] because the tmp dir lives on the host filesystem,
+  /// not on the device.
+  Future<int?> _supportDirFree(String supportDir) async {
+    final hostFs = LocalDeviceFs(supportDir, maxConcurrentTransfers: 1);
+    try {
+      return await hostFs.freeBytes();
+    } finally {
+      await hostFs.dispose();
     }
   }
 
@@ -854,7 +970,8 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     }
     _pendingPlaylistWrites.remove(groupId);
     final settings = ref.read(deviceSettingsProvider(entry.devicePath));
-    writePlaylistM3u(entry.playlist, settings).catchError((Object e) {
+    final fs = ref.read(deviceFsProvider(entry.devicePath));
+    writePlaylistM3u(entry.playlist, settings, fs).catchError((Object e) {
       dev.log(
           'TransferQueueNotifier: M3U write failed for playlist '
           '"${entry.playlist.name}" on ${entry.devicePath} — $e');
@@ -863,10 +980,11 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
   // Chains async manifest writes per folder so concurrent completions for the
   // same album don't race on the same file — without blocking the main thread.
-  void _appendManifest(String folderPath, Song song,
+  void _appendManifest(String folderPath, String devicePath, Song song,
       {int? expectedSongCount, String? filename}) {
+    final fs = ref.read(deviceFsProvider(devicePath));
     final prev = _manifestFutures[folderPath] ?? Future.value();
-    final next = prev.then((_) => addSongToManifestAsync(folderPath, song,
+    final next = prev.then((_) => addSongToManifestAsync(folderPath, song, fs,
         expectedSongCount: expectedSongCount, filename: filename));
     _manifestFutures[folderPath] = next;
     next.whenComplete(() {
@@ -880,13 +998,16 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   /// we'd serialise N read+write cycles to one folder. One write does it.
   void _appendManifestBatch(
     String folderPath,
+    String devicePath,
     List<({Song song, String filename})> entries, {
     int? expectedSongCount,
   }) {
     if (entries.isEmpty) return;
+    final fs = ref.read(deviceFsProvider(devicePath));
     final prev = _manifestFutures[folderPath] ?? Future.value();
     final next = prev.then((_) => addSongsToManifestAsync(folderPath,
         [for (final e in entries) (song: e.song, filename: e.filename)],
+        fs,
         expectedSongCount: expectedSongCount));
     _manifestFutures[folderPath] = next;
     next.whenComplete(() {

@@ -264,6 +264,12 @@ bool albumExistsOnDevice(
 /// download decision into firing. Use this for transfer-engine decisions;
 /// use [songExistsOnDevice] for UI indicators where the manifest's
 /// performance is worth the trust trade-off.
+///
+/// MTP devices: `dart:io.File("mtp://...").existsSync()` silently returns
+/// false (no crash). Until an async-warmed sync facade lands, MTP devices
+/// will report "absent" here even when the file is present. The transfer
+/// engine's overwrite-skip decision uses async `fs.exists` so this only
+/// affects UI badges, not correctness.
 bool songFileExistsOnDevice(Song song, DeviceSettings settings) =>
     File(buildSongPath(song, settings)).existsSync();
 

@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../application/device/device_settings_notifier.dart';
+import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_path_resolver.dart';
 import '../../../core/extensions/string_extensions.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/song.dart';
+import '../../../platform/device_fs.dart';
 import 'device_folder_picker_dialog.dart';
 
 class DeviceSettingsDialog extends ConsumerStatefulWidget {
@@ -305,22 +307,30 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                 value: _overwriteExisting,
                 onChanged: (v) => setState(() => _overwriteExisting = v),
               ),
-              _Switch(
-                label: 'Bulk album download (zip, faster)',
-                value: _useZipDownload,
-                onChanged: _transcodeFormat == TranscodeFormat.original
-                    ? (v) => setState(() => _useZipDownload = v)
-                    : (_) {},
-              ),
-              if (_transcodeFormat != TranscodeFormat.original)
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 4),
-                  child: Text(
-                    'Bulk zip is only available in Original format.',
-                    style: TextStyle(
-                        fontSize: 11, color: ColorTokens.textSecondary),
-                  ),
+              // Hide bulk-zip toggle on MTP: zip extracts to a host-side temp
+              // dir then re-uploads file-by-file over MTP (single session,
+              // no perf win), so the user setting is moot.
+              if (ref
+                      .read(deviceFsProvider(widget.devicePath))
+                      .protocol ==
+                  DeviceProtocol.filesystem) ...[
+                _Switch(
+                  label: 'Bulk album download (zip, faster)',
+                  value: _useZipDownload,
+                  onChanged: _transcodeFormat == TranscodeFormat.original
+                      ? (v) => setState(() => _useZipDownload = v)
+                      : (_) {},
                 ),
+                if (_transcodeFormat != TranscodeFormat.original)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4, bottom: 4),
+                    child: Text(
+                      'Bulk zip is only available in Original format.',
+                      style: TextStyle(
+                          fontSize: 11, color: ColorTokens.textSecondary),
+                    ),
+                  ),
+              ],
 
               const SizedBox(height: 28),
               Row(

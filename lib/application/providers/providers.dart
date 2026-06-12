@@ -16,7 +16,13 @@ import '../../domain/models/lidarr_instance.dart';
 import '../../domain/models/navidrome_server.dart';
 import '../../domain/models/transfer_task.dart';
 import '../../domain/repositories/library_repository.dart';
+import '../../platform/composite_drive_detector.dart';
+import '../../platform/device_fs.dart';
 import '../../platform/drive_detector.dart';
+import '../../platform/local_device_fs.dart';
+import '../../platform/mtp_client.dart';
+import '../../platform/mtp_device_fs.dart';
+import '../../platform/mtp_drive_detector.dart';
 import '../device/device_settings_notifier.dart';
 import '../settings/app_settings_notifier.dart';
 import '../transfer/transfer_queue_notifier.dart';
@@ -214,10 +220,17 @@ final libraryRepositoryProvider = Provider<LibraryRepository?>((ref) {
 
 // ── Device detection ──────────────────────────────────────────────────────────
 
+/// MTP plugin singleton. Stub until the native Swift+libmtp / WPD plugins
+/// land; calls return empty / no-op until then.
+final mtpClientProvider = Provider<MtpClient>((_) => MtpClient.instance);
+
 final driveDetectorProvider = Provider<DriveDetector>((ref) {
-  final detector = createDriveDetector();
-  ref.onDispose(detector.dispose);
-  return detector;
+  final fsDetector = createDriveDetector();
+  final mtpDetector =
+      MtpDriveDetector(client: ref.watch(mtpClientProvider));
+  final composite = CompositeDriveDetector([fsDetector, mtpDetector]);
+  ref.onDispose(composite.dispose);
+  return composite;
 });
 
 final connectedDevicesProvider = StreamProvider<List<ConnectedDevice>>((ref) {
@@ -228,6 +241,31 @@ final connectedDevicesProvider = StreamProvider<List<ConnectedDevice>>((ref) {
 // ── Device selection ──────────────────────────────────────────────────────────
 
 final selectedDeviceProvider = StateProvider<ConnectedDevice?>((_) => null);
+
+// ── DeviceFs (per-device filesystem port) ─────────────────────────────────────
+
+/// Returns a [DeviceFs] for [devicePath]. Filesystem devices get a
+/// [LocalDeviceFs] backed by `dart:io`; MTP devices (when added) will get
+/// an MTP-aware impl picked by inspecting [ConnectedDevice.protocol].
+///
+/// Lookup defaults to filesystem when the device isn't currently visible in
+/// [connectedDevicesProvider] (e.g. when an enqueued task fires before the
+/// detector has emitted a list), so historical filesystem flows keep working
+/// unchanged.
+final deviceFsProvider = Provider.family<DeviceFs, String>((ref, devicePath) {
+  final concurrency = ref.watch(appSettingsProvider).transferConcurrency;
+  final DeviceFs fs;
+  if (devicePath.startsWith('mtp://')) {
+    fs = MtpDeviceFs(
+      client: ref.watch(mtpClientProvider),
+      devicePath: devicePath,
+    );
+  } else {
+    fs = LocalDeviceFs(devicePath, maxConcurrentTransfers: concurrency);
+  }
+  ref.onDispose(fs.dispose);
+  return fs;
+});
 
 // ── App settings ──────────────────────────────────────────────────────────────
 

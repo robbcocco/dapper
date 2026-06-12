@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:dapper/data/datasources/local/scrobbler_log.dart';
+import 'package:dapper/platform/local_device_fs.dart';
 
 void main() {
   group('parseScrobblerLog', () {
@@ -62,9 +63,11 @@ void main() {
 
   group('findScrobblerLog', () {
     late Directory tmp;
+    late LocalDeviceFs fs;
 
     setUp(() async {
       tmp = await Directory.systemTemp.createTemp('scrobbler_test_');
+      fs = LocalDeviceFs(tmp.path, maxConcurrentTransfers: 1);
     });
 
     tearDown(() async {
@@ -72,15 +75,15 @@ void main() {
     });
 
     test('returns null when no candidate file exists', () async {
-      expect(await findScrobblerLog(tmp.path), isNull);
+      expect(await findScrobblerLog(tmp.path, fs), isNull);
     });
 
     test('finds .scrobbler.log at the device root', () async {
       final f = File(p.join(tmp.path, '.scrobbler.log'));
       await f.writeAsString('#AUDIOSCROBBLER/1.1\n');
-      final found = await findScrobblerLog(tmp.path);
+      final found = await findScrobblerLog(tmp.path, fs);
       expect(found, isNotNull);
-      expect(p.basename(found!.path), '.scrobbler.log');
+      expect(p.basename(found!), '.scrobbler.log');
     });
 
     test('finds a candidate one folder deep', () async {
@@ -88,15 +91,15 @@ void main() {
       await musicDir.create();
       final f = File(p.join(musicDir.path, 'scrobbler.log'));
       await f.writeAsString('#AUDIOSCROBBLER/1.1\n');
-      final found = await findScrobblerLog(tmp.path);
+      final found = await findScrobblerLog(tmp.path, fs);
       expect(found, isNotNull);
-      expect(p.basename(found!.path), 'scrobbler.log');
+      expect(p.basename(found!), 'scrobbler.log');
     });
 
     test('matches alternate filenames case-insensitively', () async {
       final f = File(p.join(tmp.path, 'LastFM.log'));
       await f.writeAsString('#AUDIOSCROBBLER/1.1\n');
-      final found = await findScrobblerLog(tmp.path);
+      final found = await findScrobblerLog(tmp.path, fs);
       expect(found, isNotNull);
     });
   });
@@ -107,7 +110,8 @@ void main() {
       try {
         final f = File(p.join(tmp.path, '.scrobbler.log'));
         await f.writeAsString('header\nrow\n');
-        await truncateScrobblerLog(f);
+        final fs = LocalDeviceFs(tmp.path, maxConcurrentTransfers: 1);
+        await truncateScrobblerLog(f.path, fs);
         expect(await f.exists(), isTrue);
         expect(await f.readAsString(), '');
       } finally {

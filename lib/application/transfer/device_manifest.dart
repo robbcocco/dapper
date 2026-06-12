@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../../domain/models/song.dart';
+import '../../platform/device_fs.dart';
 
 const _kManifestFilename = '.dapper.json';
 
@@ -177,6 +178,48 @@ AlbumManifest? readManifest(String folderPath) {
   }
 }
 
+/// Async sibling to [readManifest]. Reads via [DeviceFs.openRead] so the
+/// MTP impl can return the file's contents — the sync [readManifest] uses
+/// `dart:io` and would silently report "absent" for `mtp://` paths.
+///
+/// Populates both the manifest cache and the folder-exists cache so the
+/// next sync read (the UI hot path) returns the warmed result without going
+/// back over MTP.
+Future<AlbumManifest?> readManifestAsync(
+    String folderPath, DeviceFs fs) async {
+  final manifestPath = p.join(folderPath, _kManifestFilename);
+  if (!await fs.exists(manifestPath)) {
+    _putManifest(folderPath, null);
+    return null;
+  }
+  try {
+    final bytes = <int>[];
+    await for (final chunk in await fs.openRead(manifestPath)) {
+      bytes.addAll(chunk);
+    }
+    final m = AlbumManifest.fromJson(
+        jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>);
+    _putManifest(folderPath, m);
+    _putFolderExists(folderPath, true);
+    return m;
+  } catch (e) {
+    dev.log('readManifestAsync: $manifestPath failed — $e');
+    _putManifest(folderPath, null);
+    return null;
+  }
+}
+
+/// Async sibling to [folderExistsCached]. Probes via [DeviceFs.isDir] and
+/// writes the result to the in-memory cache so the next sync call returns
+/// the answer without re-probing.
+Future<bool> folderExistsAsync(String folderPath, DeviceFs fs) async {
+  final cached = _folderExistsCache[folderPath];
+  if (cached != null) return cached;
+  final exists = await fs.isDir(folderPath);
+  _putFolderExists(folderPath, exists);
+  return exists;
+}
+
 /// Cached `Directory(folderPath).existsSync()`. The cache is invalidated when
 /// we write a manifest into that folder (since a write implies the directory
 /// now exists), and globally on device replug via [clearDeviceCaches].
@@ -216,14 +259,25 @@ void writeManifest(String folderPath, AlbumManifest manifest) {
   _putFolderExists(folderPath, true);
 }
 
+/// Async atomic manifest write through [DeviceFs]. Use this for paths that
+/// can target either filesystem or MTP devices; for tests / sync-only paths
+/// see [writeManifest].
+Future<void> writeManifestAsync(
+        String folderPath, AlbumManifest manifest, DeviceFs fs) =>
+    _writeManifestAtomic(folderPath, manifest, fs);
+
 Future<void> _writeManifestAtomic(
-    String folderPath, AlbumManifest manifest) async {
-  final target = File(p.join(folderPath, _kManifestFilename));
-  final tmp = File(p.join(folderPath, '$_kManifestFilename.tmp'));
-  await tmp.writeAsString(
-      const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
-      flush: true);
-  await tmp.rename(target.path);
+    String folderPath, AlbumManifest manifest, DeviceFs fs) async {
+  final targetPath = p.join(folderPath, _kManifestFilename);
+  final handle = await fs.openAtomicReplace(targetPath);
+  try {
+    await handle.write(utf8.encode(
+        const JsonEncoder.withIndent('  ').convert(manifest.toJson())));
+    await handle.close();
+  } catch (e) {
+    await handle.abort();
+    rethrow;
+  }
   _putManifest(folderPath, manifest);
   _putFolderExists(folderPath, true);
 }
@@ -246,11 +300,11 @@ void addSongToManifest(String folderPath, Song song,
   ));
 }
 
-Future<void> addSongToManifestAsync(String folderPath, Song song,
+Future<void> addSongToManifestAsync(String folderPath, Song song, DeviceFs fs,
     {int? expectedSongCount, String? filename}) async {
   await addSongsToManifestAsync(folderPath, [
     (song: song, filename: filename),
-  ], expectedSongCount: expectedSongCount);
+  ], fs, expectedSongCount: expectedSongCount);
 }
 
 /// Reads the manifest once, replaces any existing entries by id, appends every
@@ -260,16 +314,21 @@ Future<void> addSongToManifestAsync(String folderPath, Song song,
 /// [addSongToManifestAsync] per song.
 Future<void> addSongsToManifestAsync(
   String folderPath,
-  List<({Song song, String? filename})> entries, {
+  List<({Song song, String? filename})> entries,
+  DeviceFs fs, {
   int? expectedSongCount,
 }) async {
   if (entries.isEmpty) return;
-  final file = File(p.join(folderPath, _kManifestFilename));
+  final manifestPath = p.join(folderPath, _kManifestFilename);
   AlbumManifest? existing;
-  if (await file.exists()) {
+  if (await fs.exists(manifestPath)) {
     try {
+      final bytes = <int>[];
+      await for (final chunk in await fs.openRead(manifestPath)) {
+        bytes.addAll(chunk);
+      }
       existing = AlbumManifest.fromJson(
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>);
+          jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>);
     } catch (_) {}
   }
   final newIds = {for (final e in entries) e.song.id};
@@ -290,5 +349,6 @@ Future<void> addSongsToManifestAsync(
       songs: songs,
       expectedSongCount: expectedSongCount ?? existing?.expectedSongCount,
     ),
+    fs,
   );
 }

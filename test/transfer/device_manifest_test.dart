@@ -6,15 +6,18 @@ import 'package:path/path.dart' as p;
 
 import 'package:dapper/application/transfer/device_manifest.dart';
 import 'package:dapper/domain/models/song.dart';
+import 'package:dapper/platform/local_device_fs.dart';
 
 Song _song({String id = 's1', String title = 'Title'}) =>
     Song(id: id, title: title, album: 'Alb', artist: 'Art');
 
 void main() {
   late Directory tmp;
+  late LocalDeviceFs fs;
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('dapper_manifest_test_');
+    fs = LocalDeviceFs(tmp.path, maxConcurrentTransfers: 1);
     // Each test starts with a clean in-memory cache so we never inherit
     // state from another test's run.
     clearDeviceCaches();
@@ -202,9 +205,10 @@ void main() {
 
   group('addSongToManifestAsync', () {
     test('matches the sync version end to end', () async {
-      await addSongToManifestAsync(tmp.path, _song(id: 'a'),
+      await addSongToManifestAsync(tmp.path, _song(id: 'a'), fs,
           filename: 'a.mp3', expectedSongCount: 2);
-      await addSongToManifestAsync(tmp.path, _song(id: 'b'), filename: 'b.mp3');
+      await addSongToManifestAsync(tmp.path, _song(id: 'b'), fs,
+          filename: 'b.mp3');
       final m = readManifest(tmp.path)!;
       expect(m.songs.map((s) => s.id), ['a', 'b']);
       expect(m.expectedSongCount, 2);
@@ -218,7 +222,7 @@ void main() {
       Future<void> chain = Future.value();
       for (var i = 0; i < 10; i++) {
         chain = chain.then((_) =>
-            addSongToManifestAsync(tmp.path, _song(id: 's$i')));
+            addSongToManifestAsync(tmp.path, _song(id: 's$i'), fs));
       }
       await chain;
       final m = readManifest(tmp.path)!;

@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:win32/win32.dart';
 
 import '../domain/models/connected_device.dart';
+import 'device_fs.dart';
 
 abstract class DriveDetector {
   Stream<List<ConnectedDevice>> watchDrives();
@@ -79,6 +80,7 @@ class MacosDriveDetector implements DriveDetector {
         label: entry['label'] as String? ?? 'USB Device',
         totalBytes: (entry['totalBytes'] as int?) ?? 0,
         availableBytes: (entry['availableBytes'] as int?) ?? 0,
+        protocol: DeviceProtocol.filesystem,
       ));
     }
     return result;
@@ -210,6 +212,7 @@ class WindowsDriveDetector implements DriveDetector {
         label: label.isEmpty ? '$letter:' : label,
         totalBytes: totalBytes.value,
         availableBytes: freeBytes.value,
+        protocol: DeviceProtocol.filesystem,
       );
     } catch (_) {
       return null;

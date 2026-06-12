@@ -1,9 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../core/theme/color_tokens.dart';
+import '../../../platform/device_fs.dart';
 
 const _audioExtensions = {
   'flac', 'mp3', 'aac', 'm4a', 'ogg', 'opus',
@@ -25,31 +24,68 @@ bool _isPlaylist(String path) {
 }
 
 class DeviceFileBrowser extends StatefulWidget {
-  const DeviceFileBrowser({super.key, required this.rootPath});
+  const DeviceFileBrowser({
+    super.key,
+    required this.rootPath,
+    required this.fs,
+  });
 
   final String rootPath;
+  final DeviceFs fs;
 
   @override
   State<DeviceFileBrowser> createState() => _DeviceFileBrowserState();
 }
 
 class _DeviceFileBrowserState extends State<DeviceFileBrowser> {
-  // Incrementing this forces _FolderNode to rebuild from scratch.
+  // Incrementing this forces _FolderNode + the root existence probe to
+  // rebuild from scratch.
   int _generation = 0;
+  bool? _rootExists;
 
-  void _refresh() => setState(() => _generation++);
+  void _refresh() {
+    setState(() {
+      _generation++;
+      _rootExists = null;
+    });
+    _probeRoot();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _probeRoot();
+  }
 
   @override
   void didUpdateWidget(DeviceFileBrowser old) {
     super.didUpdateWidget(old);
     // Root path changed (settings updated or different device selected).
-    if (old.rootPath != widget.rootPath) _generation++;
+    if (old.rootPath != widget.rootPath || old.fs != widget.fs) {
+      _generation++;
+      _rootExists = null;
+      _probeRoot();
+    }
+  }
+
+  Future<void> _probeRoot() async {
+    final exists = await widget.fs.isDir(widget.rootPath);
+    if (!mounted) return;
+    setState(() => _rootExists = exists);
   }
 
   @override
   Widget build(BuildContext context) {
-    final root = Directory(widget.rootPath);
-    if (!root.existsSync()) {
+    if (_rootExists == null) {
+      return const Center(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 1.5),
+        ),
+      );
+    }
+    if (_rootExists == false) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -57,9 +93,9 @@ class _DeviceFileBrowserState extends State<DeviceFileBrowser> {
             const Icon(Icons.folder_off_outlined,
                 size: 36, color: ColorTokens.textSecondary),
             const SizedBox(height: 12),
-            Text(
+            const Text(
               'Folder not found on device',
-              style: const TextStyle(
+              style: TextStyle(
                   fontSize: 13, color: ColorTokens.textSecondary),
             ),
             const SizedBox(height: 4),
@@ -115,6 +151,7 @@ class _DeviceFileBrowserState extends State<DeviceFileBrowser> {
             children: [
               _FolderNode(
                 key: ValueKey('${widget.rootPath}/$_generation'),
+                fs: widget.fs,
                 path: widget.rootPath,
                 depth: 0,
                 startExpanded: true,
@@ -130,11 +167,13 @@ class _DeviceFileBrowserState extends State<DeviceFileBrowser> {
 class _FolderNode extends StatefulWidget {
   const _FolderNode({
     super.key,
+    required this.fs,
     required this.path,
     required this.depth,
     this.startExpanded = false,
   });
 
+  final DeviceFs fs;
   final String path;
   final int depth;
   final bool startExpanded;
@@ -145,7 +184,7 @@ class _FolderNode extends StatefulWidget {
 
 class _FolderNodeState extends State<_FolderNode> {
   bool _expanded = false;
-  List<FileSystemEntity>? _children;
+  List<DeviceFsEntry>? _children;
   bool _loading = false;
   String? _error;
 
@@ -165,26 +204,22 @@ class _FolderNodeState extends State<_FolderNode> {
       return;
     }
     setState(() => _loading = true);
-    Directory(widget.path).list().toList().then((entities) {
-      entities.removeWhere(
-        (e) => p.basename(e.path).startsWith('.'),
-      );
-      entities.sort((a, b) {
-        final aIsDir = a is Directory;
-        final bIsDir = b is Directory;
-        if (aIsDir != bIsDir) return aIsDir ? -1 : 1;
+    widget.fs.list(widget.path).then((entries) {
+      entries.removeWhere((e) => p.basename(e.path).startsWith('.'));
+      entries.sort((a, b) {
+        if (a.isDir != b.isDir) return a.isDir ? -1 : 1;
         return p.basename(a.path).toLowerCase()
             .compareTo(p.basename(b.path).toLowerCase());
       });
       if (mounted) {
         setState(() {
-          _children = entities;
+          _children = entries;
           _expanded = true;
           _loading = false;
           _error = null;
         });
       }
-    }).catchError((e) {
+    }).catchError((Object e) {
       if (mounted) setState(() { _loading = false; _error = e.toString(); });
     });
   }
@@ -246,17 +281,18 @@ class _FolderNodeState extends State<_FolderNode> {
           ),
         ),
         if (_expanded && _children != null)
-          ..._children!.map((entity) {
-            if (entity is Directory) {
+          ..._children!.map((entry) {
+            if (entry.isDir) {
               return _FolderNode(
-                key: ValueKey(entity.path),
-                path: entity.path,
+                key: ValueKey(entry.path),
+                fs: widget.fs,
+                path: entry.path,
                 depth: widget.depth + 1,
               );
-            } else if (entity is File && _isAudio(entity.path)) {
-              return _AudioFileRow(path: entity.path, depth: widget.depth + 1);
-            } else if (entity is File && _isPlaylist(entity.path)) {
-              return _PlaylistFileRow(path: entity.path, depth: widget.depth + 1);
+            } else if (_isAudio(entry.path)) {
+              return _AudioFileRow(path: entry.path, depth: widget.depth + 1);
+            } else if (_isPlaylist(entry.path)) {
+              return _PlaylistFileRow(path: entry.path, depth: widget.depth + 1);
             }
             return const SizedBox.shrink();
           }),
@@ -264,11 +300,11 @@ class _FolderNodeState extends State<_FolderNode> {
     );
   }
 
-  String _summary(List<FileSystemEntity> entities) {
-    final dirs = entities.whereType<Directory>().length;
-    final tracks = entities.where((e) => e is File && _isAudio(e.path)).length;
+  String _summary(List<DeviceFsEntry> entries) {
+    final dirs = entries.where((e) => e.isDir).length;
+    final tracks = entries.where((e) => !e.isDir && _isAudio(e.path)).length;
     final playlists =
-        entities.where((e) => e is File && _isPlaylist(e.path)).length;
+        entries.where((e) => !e.isDir && _isPlaylist(e.path)).length;
     final parts = <String>[];
     if (dirs > 0) parts.add('$dirs folder${dirs == 1 ? '' : 's'}');
     if (tracks > 0) parts.add('$tracks track${tracks == 1 ? '' : 's'}');

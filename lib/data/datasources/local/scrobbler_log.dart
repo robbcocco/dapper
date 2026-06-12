@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:developer' as dev;
-import 'dart:io';
 
 import 'package:path/path.dart' as p;
+
+import '../../../platform/device_fs.dart';
 
 /// Parser + locator for AudioScrobbler 1.1 logs written by DAPs that support
 /// offline scrobbling (Rockbox, some HiBy / FiiO / Cowon firmwares).
@@ -58,23 +59,23 @@ class ScrobblerLogEntry {
 /// [_kCandidateNames]. Stops at the first hit. Walking the whole device tree
 /// would be wasteful — every known firmware drops the log at the root or one
 /// folder deep (e.g. `Music/.scrobbler.log`).
-Future<File?> findScrobblerLog(String deviceRoot) async {
-  final root = Directory(deviceRoot);
-  if (!await root.exists()) return null;
+///
+/// Returns the absolute path to the log file, or null if none was found.
+Future<String?> findScrobblerLog(String deviceRoot, DeviceFs fs) async {
+  if (!await fs.isDir(deviceRoot)) return null;
   try {
-    await for (final entity
-        in root.list(followLinks: false, recursive: false)) {
-      if (entity is File && _matchesCandidate(entity.path)) return entity;
-      if (entity is Directory) {
-        // One shallow descent; avoid recursion to keep cost predictable on
-        // devices with deep music trees.
-        try {
-          await for (final inner
-              in entity.list(followLinks: false, recursive: false)) {
-            if (inner is File && _matchesCandidate(inner.path)) return inner;
-          }
-        } catch (_) {/* permission denied on inner dir → keep scanning */}
-      }
+    final lvl0 = await fs.list(deviceRoot);
+    for (final entry in lvl0) {
+      if (!entry.isDir && _matchesCandidate(entry.path)) return entry.path;
+    }
+    for (final entry in lvl0) {
+      if (!entry.isDir) continue;
+      try {
+        final lvl1 = await fs.list(entry.path);
+        for (final inner in lvl1) {
+          if (!inner.isDir && _matchesCandidate(inner.path)) return inner.path;
+        }
+      } catch (_) {/* permission denied on inner dir → keep scanning */}
     }
   } catch (e) {
     dev.log('findScrobblerLog: scan of $deviceRoot failed — $e');
@@ -125,14 +126,14 @@ List<ScrobblerLogEntry> parseScrobblerLog(String contents) {
   return out;
 }
 
-/// Truncates [file] in place after a successful import. Devices append new
-/// rows to the same file, so truncate-rather-than-delete is more robust —
-/// some firmwares re-create the file with a header on next play, but others
-/// fail to append if the file vanishes mid-session.
-Future<void> truncateScrobblerLog(File file) async {
+/// Truncates the log at [path] in place after a successful import. Devices
+/// append new rows to the same file, so truncate-rather-than-delete is more
+/// robust — some firmwares re-create the file with a header on next play,
+/// but others fail to append if the file vanishes mid-session.
+Future<void> truncateScrobblerLog(String path, DeviceFs fs) async {
   try {
-    await file.writeAsString('', flush: true);
+    await fs.truncate(path);
   } catch (e) {
-    dev.log('truncateScrobblerLog: failed for ${file.path} — $e');
+    dev.log('truncateScrobblerLog: failed for $path — $e');
   }
 }

@@ -1,13 +1,23 @@
-import 'dart:io';
-
 import 'package:path/path.dart' as p;
 
 import '../../core/extensions/string_extensions.dart';
 import '../../domain/models/device_settings.dart';
 import '../../domain/models/song.dart';
 import '../../domain/repositories/library_repository.dart';
+import '../../platform/device_fs.dart';
 import '../transfer/device_manifest.dart';
 import '../transfer/transfer_path_resolver.dart';
+
+const _kAudioExtensions = {
+  '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav',
+  '.opus', '.wma', '.ape', '.aiff', '.dsf', '.dff',
+};
+
+bool _isAudioEntry(DeviceFsEntry entry) {
+  final name = p.basename(entry.path);
+  if (name.startsWith('._')) return false;
+  return _kAudioExtensions.contains(p.extension(entry.path).toLowerCase());
+}
 
 /// A song ID that was found in two or more album folders (cross-folder duplicate).
 class DeviceDuplicate {
@@ -79,7 +89,8 @@ class DeviceScanResult {
 
 Future<DeviceScanResult> scanDevice(
   DeviceSettings settings,
-  LibraryRepository repo, {
+  LibraryRepository repo,
+  DeviceFs fs, {
   void Function(String)? onProgress,
 }) async {
   // Phase 1: library-aware scan (manifest building + cross-folder duplicates).
@@ -108,7 +119,7 @@ Future<DeviceScanResult> scanDevice(
         final folder =
             buildAlbumFolder(album.artist, album.name, album.year, settings);
         if (folder == null) continue;
-        if (!Directory(folder).existsSync()) continue;
+        if (!await fs.isDir(folder)) continue;
 
         final existing = readManifest(folder);
         for (final ms in existing?.songs ?? <ManifestSong>[]) {
@@ -117,14 +128,13 @@ Future<DeviceScanResult> scanDevice(
 
         final existingIds = existing?.songs.map((s) => s.id).toSet() ?? {};
 
-        final audioFiles = Directory(folder)
-            .listSync()
-            .whereType<File>()
-            .where(isAudioFile)
-            .map((f) => p.basenameWithoutExtension(f.path))
-            .toSet();
+        final audioBasenames = <String>{};
+        for (final entry in await fs.list(folder)) {
+          if (entry.isDir || !_isAudioEntry(entry)) continue;
+          audioBasenames.add(p.basenameWithoutExtension(entry.path));
+        }
 
-        if (audioFiles.isEmpty) continue;
+        if (audioBasenames.isEmpty) continue;
         albumsMatched++;
 
         if (existingIds.length < album.songCount) {
@@ -135,7 +145,7 @@ Future<DeviceScanResult> scanDevice(
 
             for (final song in fullAlbum.songs) {
               if (existingIds.contains(song.id)) continue;
-              if (audioFiles.contains(_filenameWithoutExt(song, settings))) {
+              if (audioBasenames.contains(_filenameWithoutExt(song, settings))) {
                 final ms = ManifestSong(
                   id: song.id,
                   title: song.title,
@@ -148,7 +158,7 @@ Future<DeviceScanResult> scanDevice(
             }
 
             if (newEntries.isNotEmpty) {
-              writeManifest(
+              await writeManifestAsync(
                 folder,
                 AlbumManifest(
                   songs: [
@@ -157,17 +167,19 @@ Future<DeviceScanResult> scanDevice(
                   ],
                   expectedSongCount: album.songCount,
                 ),
+                fs,
               );
               songsMatched += newEntries.length;
             } else if (existing != null &&
                 existing.expectedSongCount != album.songCount) {
               // Manifest exists but lacks the expected count — update it.
-              writeManifest(
+              await writeManifestAsync(
                 folder,
                 AlbumManifest(
                   songs: existing.songs,
                   expectedSongCount: album.songCount,
                 ),
+                fs,
               );
             }
           } catch (_) {
@@ -190,9 +202,9 @@ Future<DeviceScanResult> scanDevice(
   // Phase 2: filesystem walk — detect intra-folder duplicates by track prefix.
   onProgress?.call('Checking for file duplicates…');
   final fileDuplicates = <FileDuplicate>[];
-  final root = Directory(settings.resolvedMusicRoot);
-  if (root.existsSync()) {
-    _collectFileDuplicates(root, fileDuplicates, settings);
+  final root = fs.resolveMusicRoot(settings);
+  if (await fs.isDir(root)) {
+    await _collectFileDuplicates(root, fileDuplicates, settings, fs);
   }
 
   return DeviceScanResult(
@@ -205,20 +217,22 @@ Future<DeviceScanResult> scanDevice(
   );
 }
 
-void _collectFileDuplicates(
-  Directory dir,
+Future<void> _collectFileDuplicates(
+  String dirPath,
   List<FileDuplicate> out,
   DeviceSettings settings,
-) {
+  DeviceFs fs,
+) async {
   // Build set of manifest-known safe titles for this directory.
-  final manifest = readManifest(dir.path);
+  final manifest = readManifest(dirPath);
   final manifestTitles =
       manifest?.songs.map((s) => s.title.toSafeFilename()).toSet() ??
           const <String>{};
 
   final prefixGroups = <String, List<String>>{};
-  for (final entity in dir.listSync()) {
-    if (entity is File && isAudioFile(entity)) {
+  final entries = await fs.list(dirPath);
+  for (final entity in entries) {
+    if (!entity.isDir && _isAudioEntry(entity)) {
       final base = p.basenameWithoutExtension(entity.path);
       final prefix = _trackPrefix(base);
       if (prefix != null) {
@@ -226,9 +240,8 @@ void _collectFileDuplicates(
             .putIfAbsent(prefix, () => [])
             .add(p.basename(entity.path));
       }
-    } else if (entity is Directory &&
-        !p.basename(entity.path).startsWith('.')) {
-      _collectFileDuplicates(entity, out, settings);
+    } else if (entity.isDir && !p.basename(entity.path).startsWith('.')) {
+      await _collectFileDuplicates(entity.path, out, settings, fs);
     }
   }
 
@@ -247,7 +260,7 @@ void _collectFileDuplicates(
         }
       }
       out.add(FileDuplicate(
-        folderPath: dir.path,
+        folderPath: dirPath,
         filenames: entry.value,
         correctFilename: correct,
       ));

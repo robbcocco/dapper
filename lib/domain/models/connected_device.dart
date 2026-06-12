@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import '../../platform/device_fs.dart';
+
 part 'connected_device.freezed.dart';
 
 @freezed
@@ -9,6 +11,7 @@ class ConnectedDevice with _$ConnectedDevice {
     required String label,
     required int totalBytes,
     required int availableBytes,
+    @Default(DeviceProtocol.filesystem) DeviceProtocol protocol,
   }) = _ConnectedDevice;
 
   const ConnectedDevice._();

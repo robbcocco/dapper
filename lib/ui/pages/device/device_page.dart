@@ -12,6 +12,7 @@ import '../../../application/device/device_tag_sanitize.dart';
 import '../../../application/playback/scrobble_importer.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_queue_notifier.dart';
+import '../../../platform/device_fs.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/transfer_task.dart';
@@ -215,6 +216,10 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
             ),
           ),
 
+        // ── MTP banner ─────────────────────────────────────────────────────
+        if (selected != null && selected.protocol == DeviceProtocol.mtp)
+          const _MtpBanner(),
+
         // ── Scrobble import banner ──────────────────────────────────────────
         if (selected != null) _ScrobbleImportBanner(devicePath: selected.path),
 
@@ -272,6 +277,7 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
                           style: TextStyle(color: ColorTokens.textSecondary)))
                   : DeviceFileBrowser(
                       rootPath: settings?.resolvedMusicRoot ?? selected.path,
+                      fs: ref.watch(deviceFsProvider(selected.path)),
                     ),
 
               // Transfer Queue
@@ -293,18 +299,21 @@ Future<void> _showScanDialog(
   final settings = ref.read(deviceSettingsProvider(devicePath));
   final repo = ref.read(libraryRepositoryProvider);
   if (repo == null) return;
+  final fs = ref.read(deviceFsProvider(devicePath));
 
   await showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => _ScanDialog(settings: settings, repo: repo),
+    builder: (_) => _ScanDialog(settings: settings, repo: repo, fs: fs),
   );
 }
 
 class _ScanDialog extends StatefulWidget {
-  const _ScanDialog({required this.settings, required this.repo});
+  const _ScanDialog(
+      {required this.settings, required this.repo, required this.fs});
   final DeviceSettings settings;
   final LibraryRepository repo;
+  final DeviceFs fs;
 
   @override
   State<_ScanDialog> createState() => _ScanDialogState();
@@ -333,6 +342,7 @@ class _ScanDialogState extends State<_ScanDialog> {
       final result = await scanDevice(
         widget.settings,
         widget.repo,
+        widget.fs,
         onProgress: (msg) {
           if (mounted) setState(() => _status = msg);
         },
@@ -380,6 +390,7 @@ class _ScanDialogState extends State<_ScanDialog> {
       final result = await pruneDevice(
         widget.settings,
         widget.repo,
+        widget.fs,
         onProgress: (msg) {
           if (mounted) setState(() => _pruneStatus = msg);
         },
@@ -1409,5 +1420,42 @@ class _ScrobbleImportBanner extends ConsumerWidget {
           '${r.errors == 1 ? '' : 's'}.';
     }
     return base;
+  }
+}
+
+/// Static info banner shown when the selected device is MTP.
+///
+/// Explains why transfers run sequentially (single-session protocol). The
+/// transfer engine reads concurrency from `DeviceFs.maxConcurrentTransfers`
+/// which is hard-coded to 1 for MTP, regardless of the user's global
+/// concurrency setting.
+class _MtpBanner extends StatelessWidget {
+  const _MtpBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: ColorTokens.accent.withValues(alpha: 0.06),
+          border: Border.all(color: ColorTokens.accent.withValues(alpha: 0.28)),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Row(
+          children: [
+            Icon(Icons.phone_android, size: 14, color: ColorTokens.accent),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'MTP device — transfers run sequentially.',
+                style: TextStyle(fontSize: 11, color: ColorTokens.accent),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

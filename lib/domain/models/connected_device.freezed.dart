@@ -21,6 +21,7 @@ mixin _$ConnectedDevice {
   String get label => throw _privateConstructorUsedError;
   int get totalBytes => throw _privateConstructorUsedError;
   int get availableBytes => throw _privateConstructorUsedError;
+  DeviceProtocol get protocol => throw _privateConstructorUsedError;
 
   /// Create a copy of ConnectedDevice
   /// with the given fields replaced by the non-null parameter values.
@@ -36,7 +37,13 @@ abstract class $ConnectedDeviceCopyWith<$Res> {
     $Res Function(ConnectedDevice) then,
   ) = _$ConnectedDeviceCopyWithImpl<$Res, ConnectedDevice>;
   @useResult
-  $Res call({String path, String label, int totalBytes, int availableBytes});
+  $Res call({
+    String path,
+    String label,
+    int totalBytes,
+    int availableBytes,
+    DeviceProtocol protocol,
+  });
 }
 
 /// @nodoc
@@ -58,6 +65,7 @@ class _$ConnectedDeviceCopyWithImpl<$Res, $Val extends ConnectedDevice>
     Object? label = null,
     Object? totalBytes = null,
     Object? availableBytes = null,
+    Object? protocol = null,
   }) {
     return _then(
       _value.copyWith(
@@ -77,6 +85,10 @@ class _$ConnectedDeviceCopyWithImpl<$Res, $Val extends ConnectedDevice>
                 ? _value.availableBytes
                 : availableBytes // ignore: cast_nullable_to_non_nullable
                       as int,
+            protocol: null == protocol
+                ? _value.protocol
+                : protocol // ignore: cast_nullable_to_non_nullable
+                      as DeviceProtocol,
           )
           as $Val,
     );
@@ -92,7 +104,13 @@ abstract class _$$ConnectedDeviceImplCopyWith<$Res>
   ) = __$$ConnectedDeviceImplCopyWithImpl<$Res>;
   @override
   @useResult
-  $Res call({String path, String label, int totalBytes, int availableBytes});
+  $Res call({
+    String path,
+    String label,
+    int totalBytes,
+    int availableBytes,
+    DeviceProtocol protocol,
+  });
 }
 
 /// @nodoc
@@ -113,6 +131,7 @@ class __$$ConnectedDeviceImplCopyWithImpl<$Res>
     Object? label = null,
     Object? totalBytes = null,
     Object? availableBytes = null,
+    Object? protocol = null,
   }) {
     return _then(
       _$ConnectedDeviceImpl(
@@ -132,6 +151,10 @@ class __$$ConnectedDeviceImplCopyWithImpl<$Res>
             ? _value.availableBytes
             : availableBytes // ignore: cast_nullable_to_non_nullable
                   as int,
+        protocol: null == protocol
+            ? _value.protocol
+            : protocol // ignore: cast_nullable_to_non_nullable
+                  as DeviceProtocol,
       ),
     );
   }
@@ -145,6 +168,7 @@ class _$ConnectedDeviceImpl extends _ConnectedDevice {
     required this.label,
     required this.totalBytes,
     required this.availableBytes,
+    this.protocol = DeviceProtocol.filesystem,
   }) : super._();
 
   @override
@@ -155,10 +179,13 @@ class _$ConnectedDeviceImpl extends _ConnectedDevice {
   final int totalBytes;
   @override
   final int availableBytes;
+  @override
+  @JsonKey()
+  final DeviceProtocol protocol;
 
   @override
   String toString() {
-    return 'ConnectedDevice(path: $path, label: $label, totalBytes: $totalBytes, availableBytes: $availableBytes)';
+    return 'ConnectedDevice(path: $path, label: $label, totalBytes: $totalBytes, availableBytes: $availableBytes, protocol: $protocol)';
   }
 
   @override
@@ -171,12 +198,20 @@ class _$ConnectedDeviceImpl extends _ConnectedDevice {
             (identical(other.totalBytes, totalBytes) ||
                 other.totalBytes == totalBytes) &&
             (identical(other.availableBytes, availableBytes) ||
-                other.availableBytes == availableBytes));
+                other.availableBytes == availableBytes) &&
+            (identical(other.protocol, protocol) ||
+                other.protocol == protocol));
   }
 
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, path, label, totalBytes, availableBytes);
+  int get hashCode => Object.hash(
+    runtimeType,
+    path,
+    label,
+    totalBytes,
+    availableBytes,
+    protocol,
+  );
 
   /// Create a copy of ConnectedDevice
   /// with the given fields replaced by the non-null parameter values.
@@ -196,6 +231,7 @@ abstract class _ConnectedDevice extends ConnectedDevice {
     required final String label,
     required final int totalBytes,
     required final int availableBytes,
+    final DeviceProtocol protocol,
   }) = _$ConnectedDeviceImpl;
   const _ConnectedDevice._() : super._();
 
@@ -207,6 +243,8 @@ abstract class _ConnectedDevice extends ConnectedDevice {
   int get totalBytes;
   @override
   int get availableBytes;
+  @override
+  DeviceProtocol get protocol;
 
   /// Create a copy of ConnectedDevice
   /// with the given fields replaced by the non-null parameter values.
