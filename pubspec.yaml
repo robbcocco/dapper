@@ -1,7 +1,7 @@
 name: dapper
 description: "Transfer music from Navidrome to your DAP — iTunes-inspired desktop app."
 publish_to: 'none'
-version: 1.1.1
+version: 1.2.0
 
 environment:
   sdk: ^3.12.0
@@ -15,6 +15,10 @@ dependencies:
 
   # Zip extraction for album/artist bulk download
   archive: ^3.6.1
+
+  # Image decode/resize/encode — used to shrink embedded album art so files
+  # sent to small-screen DAPs don't carry server-sized covers.
+  image: ^4.3.0
 
   # State management
   flutter_riverpod: ^2.6.1

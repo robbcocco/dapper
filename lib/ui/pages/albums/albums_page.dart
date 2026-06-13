@@ -103,7 +103,7 @@ class _ArtistAlbumsView extends ConsumerWidget {
                   height: 80,
                   child: CoverArtImage(
                     coverArtId: artist.coverArtId,
-                    size: 160,
+                    size: AppConstants.gridCoverArtSize,
                     borderRadius: 40,
                   ),
                 ),
@@ -385,7 +385,7 @@ class _AlbumCard extends ConsumerWidget {
                 Positioned.fill(
                   child: CoverArtImage(
                     coverArtId: album.coverArtId,
-                    size: AppConstants.albumCardSize.toInt(),
+                    size: AppConstants.gridCoverArtSize,
                     borderRadius: 6,
                   ),
                 ),

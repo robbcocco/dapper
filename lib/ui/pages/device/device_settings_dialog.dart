@@ -41,6 +41,8 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
   late TranscodeFormat _transcodeFormat;
   late int? _transcodeMaxBitRate;
   late bool _useZipDownload;
+  late bool _autoCleanMetadata;
+  late bool _autoShrinkCoverArt;
 
   @override
   void initState() {
@@ -55,6 +57,8 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
     _transcodeFormat = settings.transcodeFormat;
     _transcodeMaxBitRate = settings.transcodeMaxBitRate;
     _useZipDownload = settings.useZipDownload;
+    _autoCleanMetadata = settings.autoCleanMetadata;
+    _autoShrinkCoverArt = settings.autoShrinkCoverArt;
     _customTemplateCtrl =
         TextEditingController(text: settings.customFilenameTemplate);
     _customFolderCtrl =
@@ -116,6 +120,8 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
             useZipDownload: _useZipDownload,
             customFilenameTemplate: _customTemplateCtrl.text.trim(),
             customFolderTemplate: _customFolderCtrl.text.trim(),
+            autoCleanMetadata: _autoCleanMetadata,
+            autoShrinkCoverArt: _autoShrinkCoverArt,
           ),
         );
     Navigator.of(context).pop();
@@ -321,6 +327,37 @@ class _DeviceSettingsDialogState extends ConsumerState<DeviceSettingsDialog> {
                         fontSize: 11, color: ColorTokens.textSecondary),
                   ),
                 ),
+              const SizedBox(height: 12),
+              _SectionLabel('DAP COMPATIBILITY'),
+              const SizedBox(height: 8),
+              _Switch(
+                label: 'Automatically clean metadata',
+                value: _autoCleanMetadata,
+                onChanged: (v) => setState(() => _autoCleanMetadata = v),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(left: 4, bottom: 4),
+                child: Text(
+                  'Strips multi-line LYRICS and duplicate GENRE that break '
+                  'embedded DAP tag parsers (e.g. Shanling M-series).',
+                  style: TextStyle(
+                      fontSize: 11, color: ColorTokens.textSecondary),
+                ),
+              ),
+              _Switch(
+                label: 'Automatically shrink album art',
+                value: _autoShrinkCoverArt,
+                onChanged: (v) => setState(() => _autoShrinkCoverArt = v),
+              ),
+              const Padding(
+                padding: EdgeInsets.only(left: 4, bottom: 4),
+                child: Text(
+                  'Resizes embedded cover art to 320 px (DAP screen size). '
+                  'Lossless audio is untouched; saves several MB per album.',
+                  style: TextStyle(
+                      fontSize: 11, color: ColorTokens.textSecondary),
+                ),
+              ),
 
               const SizedBox(height: 28),
               Row(

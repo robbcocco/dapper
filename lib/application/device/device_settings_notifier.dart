@@ -35,6 +35,8 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
       useZipDownload: Value(settings.useZipDownload),
       customFilenameTemplate: Value(settings.customFilenameTemplate),
       customFolderTemplate: Value(settings.customFolderTemplate),
+      autoCleanMetadata: Value(settings.autoCleanMetadata),
+      autoShrinkCoverArt: Value(settings.autoShrinkCoverArt),
     ));
   }
 
@@ -60,6 +62,8 @@ class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
         useZipDownload: row.useZipDownload,
         customFilenameTemplate: row.customFilenameTemplate,
         customFolderTemplate: row.customFolderTemplate,
+        autoCleanMetadata: row.autoCleanMetadata,
+        autoShrinkCoverArt: row.autoShrinkCoverArt,
       );
 }
 

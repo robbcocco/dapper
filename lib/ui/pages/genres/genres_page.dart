@@ -157,7 +157,7 @@ class _GenreAlbumCard extends ConsumerWidget {
             aspectRatio: 1,
             child: CoverArtImage(
               coverArtId: album.coverArtId,
-              size: (AppConstants.albumCardSize * 2).toInt(),
+              size: AppConstants.gridCoverArtSize,
               borderRadius: 6,
             ),
           ),

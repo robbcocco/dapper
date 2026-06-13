@@ -27,6 +27,11 @@ class DeviceSettingsTable extends Table {
   // v7: custom folder template (only honoured when folderStructure == custom).
   TextColumn get customFolderTemplate =>
       text().withDefault(const Constant(''))();
+  // v8: post-transfer FLAC sanitiser + cover-art shrink toggles.
+  BoolColumn get autoCleanMetadata =>
+      boolean().withDefault(const Constant(true))();
+  BoolColumn get autoShrinkCoverArt =>
+      boolean().withDefault(const Constant(true))();
 
   @override
   Set<Column> get primaryKey => {devicePath};

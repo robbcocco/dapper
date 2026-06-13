@@ -669,12 +669,66 @@ class _ScanDialogState extends State<_ScanDialog> {
                       child: Row(
                         children: [
                           const Expanded(
+                            child: Text('Already clean (skipped)',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: ColorTokens.textSecondary)),
+                          ),
+                          Text('${_sanitizeResult!.filesSkipped}',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ColorTokens.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Expanded(
                             child: Text('Files cleaned',
                                 style: TextStyle(
                                     fontSize: 12,
                                     color: ColorTokens.textSecondary)),
                           ),
                           Text('${_sanitizeResult!.filesModified}',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ColorTokens.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Album covers shrunk',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: ColorTokens.textSecondary)),
+                          ),
+                          Text('${_sanitizeResult!.coversShrunk}',
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ColorTokens.textPrimary)),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Space freed',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: ColorTokens.textSecondary)),
+                          ),
+                          Text(_bytesHuman(_sanitizeResult!.bytesFreed),
                               style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -718,13 +772,13 @@ class _ScanDialogState extends State<_ScanDialog> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('Clean FLAC tags',
+                              Text('Clean FLAC tags & shrink covers',
                                   style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600,
                                       color: ColorTokens.textPrimary)),
                               Text(
-                                  'Strip lyrics / duplicate genres that break DAP tag parsers',
+                                  'Strip bad tags + shrink embedded cover art to 320 px',
                                   style: TextStyle(
                                       fontSize: 11,
                                       color: ColorTokens.textSecondary)),

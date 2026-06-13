@@ -1932,6 +1932,35 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
         requiredDuringInsert: false,
         defaultValue: const Constant(''),
       );
+  static const VerificationMeta _autoCleanMetadataMeta = const VerificationMeta(
+    'autoCleanMetadata',
+  );
+  @override
+  late final GeneratedColumn<bool> autoCleanMetadata = GeneratedColumn<bool>(
+    'auto_clean_metadata',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_clean_metadata" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  static const VerificationMeta _autoShrinkCoverArtMeta =
+      const VerificationMeta('autoShrinkCoverArt');
+  @override
+  late final GeneratedColumn<bool> autoShrinkCoverArt = GeneratedColumn<bool>(
+    'auto_shrink_cover_art',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("auto_shrink_cover_art" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     devicePath,
@@ -1946,6 +1975,8 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
     useZipDownload,
     customFilenameTemplate,
     customFolderTemplate,
+    autoCleanMetadata,
+    autoShrinkCoverArt,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2066,6 +2097,24 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
         ),
       );
     }
+    if (data.containsKey('auto_clean_metadata')) {
+      context.handle(
+        _autoCleanMetadataMeta,
+        autoCleanMetadata.isAcceptableOrUnknown(
+          data['auto_clean_metadata']!,
+          _autoCleanMetadataMeta,
+        ),
+      );
+    }
+    if (data.containsKey('auto_shrink_cover_art')) {
+      context.handle(
+        _autoShrinkCoverArtMeta,
+        autoShrinkCoverArt.isAcceptableOrUnknown(
+          data['auto_shrink_cover_art']!,
+          _autoShrinkCoverArtMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2126,6 +2175,14 @@ class $DeviceSettingsTableTable extends DeviceSettingsTable
         DriftSqlType.string,
         data['${effectivePrefix}custom_folder_template'],
       )!,
+      autoCleanMetadata: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_clean_metadata'],
+      )!,
+      autoShrinkCoverArt: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}auto_shrink_cover_art'],
+      )!,
     );
   }
 
@@ -2149,6 +2206,8 @@ class DeviceSettingsTableData extends DataClass
   final bool useZipDownload;
   final String customFilenameTemplate;
   final String customFolderTemplate;
+  final bool autoCleanMetadata;
+  final bool autoShrinkCoverArt;
   const DeviceSettingsTableData({
     required this.devicePath,
     required this.musicRootFolder,
@@ -2162,6 +2221,8 @@ class DeviceSettingsTableData extends DataClass
     required this.useZipDownload,
     required this.customFilenameTemplate,
     required this.customFolderTemplate,
+    required this.autoCleanMetadata,
+    required this.autoShrinkCoverArt,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2180,6 +2241,8 @@ class DeviceSettingsTableData extends DataClass
     map['use_zip_download'] = Variable<bool>(useZipDownload);
     map['custom_filename_template'] = Variable<String>(customFilenameTemplate);
     map['custom_folder_template'] = Variable<String>(customFolderTemplate);
+    map['auto_clean_metadata'] = Variable<bool>(autoCleanMetadata);
+    map['auto_shrink_cover_art'] = Variable<bool>(autoShrinkCoverArt);
     return map;
   }
 
@@ -2199,6 +2262,8 @@ class DeviceSettingsTableData extends DataClass
       useZipDownload: Value(useZipDownload),
       customFilenameTemplate: Value(customFilenameTemplate),
       customFolderTemplate: Value(customFolderTemplate),
+      autoCleanMetadata: Value(autoCleanMetadata),
+      autoShrinkCoverArt: Value(autoShrinkCoverArt),
     );
   }
 
@@ -2226,6 +2291,8 @@ class DeviceSettingsTableData extends DataClass
       customFolderTemplate: serializer.fromJson<String>(
         json['customFolderTemplate'],
       ),
+      autoCleanMetadata: serializer.fromJson<bool>(json['autoCleanMetadata']),
+      autoShrinkCoverArt: serializer.fromJson<bool>(json['autoShrinkCoverArt']),
     );
   }
   @override
@@ -2246,6 +2313,8 @@ class DeviceSettingsTableData extends DataClass
         customFilenameTemplate,
       ),
       'customFolderTemplate': serializer.toJson<String>(customFolderTemplate),
+      'autoCleanMetadata': serializer.toJson<bool>(autoCleanMetadata),
+      'autoShrinkCoverArt': serializer.toJson<bool>(autoShrinkCoverArt),
     };
   }
 
@@ -2262,6 +2331,8 @@ class DeviceSettingsTableData extends DataClass
     bool? useZipDownload,
     String? customFilenameTemplate,
     String? customFolderTemplate,
+    bool? autoCleanMetadata,
+    bool? autoShrinkCoverArt,
   }) => DeviceSettingsTableData(
     devicePath: devicePath ?? this.devicePath,
     musicRootFolder: musicRootFolder ?? this.musicRootFolder,
@@ -2278,6 +2349,8 @@ class DeviceSettingsTableData extends DataClass
     customFilenameTemplate:
         customFilenameTemplate ?? this.customFilenameTemplate,
     customFolderTemplate: customFolderTemplate ?? this.customFolderTemplate,
+    autoCleanMetadata: autoCleanMetadata ?? this.autoCleanMetadata,
+    autoShrinkCoverArt: autoShrinkCoverArt ?? this.autoShrinkCoverArt,
   );
   DeviceSettingsTableData copyWithCompanion(DeviceSettingsTableCompanion data) {
     return DeviceSettingsTableData(
@@ -2317,6 +2390,12 @@ class DeviceSettingsTableData extends DataClass
       customFolderTemplate: data.customFolderTemplate.present
           ? data.customFolderTemplate.value
           : this.customFolderTemplate,
+      autoCleanMetadata: data.autoCleanMetadata.present
+          ? data.autoCleanMetadata.value
+          : this.autoCleanMetadata,
+      autoShrinkCoverArt: data.autoShrinkCoverArt.present
+          ? data.autoShrinkCoverArt.value
+          : this.autoShrinkCoverArt,
     );
   }
 
@@ -2334,7 +2413,9 @@ class DeviceSettingsTableData extends DataClass
           ..write('transcodeMaxBitRate: $transcodeMaxBitRate, ')
           ..write('useZipDownload: $useZipDownload, ')
           ..write('customFilenameTemplate: $customFilenameTemplate, ')
-          ..write('customFolderTemplate: $customFolderTemplate')
+          ..write('customFolderTemplate: $customFolderTemplate, ')
+          ..write('autoCleanMetadata: $autoCleanMetadata, ')
+          ..write('autoShrinkCoverArt: $autoShrinkCoverArt')
           ..write(')'))
         .toString();
   }
@@ -2353,6 +2434,8 @@ class DeviceSettingsTableData extends DataClass
     useZipDownload,
     customFilenameTemplate,
     customFolderTemplate,
+    autoCleanMetadata,
+    autoShrinkCoverArt,
   );
   @override
   bool operator ==(Object other) =>
@@ -2369,7 +2452,9 @@ class DeviceSettingsTableData extends DataClass
           other.transcodeMaxBitRate == this.transcodeMaxBitRate &&
           other.useZipDownload == this.useZipDownload &&
           other.customFilenameTemplate == this.customFilenameTemplate &&
-          other.customFolderTemplate == this.customFolderTemplate);
+          other.customFolderTemplate == this.customFolderTemplate &&
+          other.autoCleanMetadata == this.autoCleanMetadata &&
+          other.autoShrinkCoverArt == this.autoShrinkCoverArt);
 }
 
 class DeviceSettingsTableCompanion
@@ -2386,6 +2471,8 @@ class DeviceSettingsTableCompanion
   final Value<bool> useZipDownload;
   final Value<String> customFilenameTemplate;
   final Value<String> customFolderTemplate;
+  final Value<bool> autoCleanMetadata;
+  final Value<bool> autoShrinkCoverArt;
   final Value<int> rowid;
   const DeviceSettingsTableCompanion({
     this.devicePath = const Value.absent(),
@@ -2400,6 +2487,8 @@ class DeviceSettingsTableCompanion
     this.useZipDownload = const Value.absent(),
     this.customFilenameTemplate = const Value.absent(),
     this.customFolderTemplate = const Value.absent(),
+    this.autoCleanMetadata = const Value.absent(),
+    this.autoShrinkCoverArt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   DeviceSettingsTableCompanion.insert({
@@ -2415,6 +2504,8 @@ class DeviceSettingsTableCompanion
     this.useZipDownload = const Value.absent(),
     this.customFilenameTemplate = const Value.absent(),
     this.customFolderTemplate = const Value.absent(),
+    this.autoCleanMetadata = const Value.absent(),
+    this.autoShrinkCoverArt = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : devicePath = Value(devicePath);
   static Insertable<DeviceSettingsTableData> custom({
@@ -2430,6 +2521,8 @@ class DeviceSettingsTableCompanion
     Expression<bool>? useZipDownload,
     Expression<String>? customFilenameTemplate,
     Expression<String>? customFolderTemplate,
+    Expression<bool>? autoCleanMetadata,
+    Expression<bool>? autoShrinkCoverArt,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -2448,6 +2541,9 @@ class DeviceSettingsTableCompanion
         'custom_filename_template': customFilenameTemplate,
       if (customFolderTemplate != null)
         'custom_folder_template': customFolderTemplate,
+      if (autoCleanMetadata != null) 'auto_clean_metadata': autoCleanMetadata,
+      if (autoShrinkCoverArt != null)
+        'auto_shrink_cover_art': autoShrinkCoverArt,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -2465,6 +2561,8 @@ class DeviceSettingsTableCompanion
     Value<bool>? useZipDownload,
     Value<String>? customFilenameTemplate,
     Value<String>? customFolderTemplate,
+    Value<bool>? autoCleanMetadata,
+    Value<bool>? autoShrinkCoverArt,
     Value<int>? rowid,
   }) {
     return DeviceSettingsTableCompanion(
@@ -2481,6 +2579,8 @@ class DeviceSettingsTableCompanion
       customFilenameTemplate:
           customFilenameTemplate ?? this.customFilenameTemplate,
       customFolderTemplate: customFolderTemplate ?? this.customFolderTemplate,
+      autoCleanMetadata: autoCleanMetadata ?? this.autoCleanMetadata,
+      autoShrinkCoverArt: autoShrinkCoverArt ?? this.autoShrinkCoverArt,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -2528,6 +2628,12 @@ class DeviceSettingsTableCompanion
         customFolderTemplate.value,
       );
     }
+    if (autoCleanMetadata.present) {
+      map['auto_clean_metadata'] = Variable<bool>(autoCleanMetadata.value);
+    }
+    if (autoShrinkCoverArt.present) {
+      map['auto_shrink_cover_art'] = Variable<bool>(autoShrinkCoverArt.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -2549,6 +2655,8 @@ class DeviceSettingsTableCompanion
           ..write('useZipDownload: $useZipDownload, ')
           ..write('customFilenameTemplate: $customFilenameTemplate, ')
           ..write('customFolderTemplate: $customFolderTemplate, ')
+          ..write('autoCleanMetadata: $autoCleanMetadata, ')
+          ..write('autoShrinkCoverArt: $autoShrinkCoverArt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3467,6 +3575,8 @@ typedef $$DeviceSettingsTableTableCreateCompanionBuilder =
       Value<bool> useZipDownload,
       Value<String> customFilenameTemplate,
       Value<String> customFolderTemplate,
+      Value<bool> autoCleanMetadata,
+      Value<bool> autoShrinkCoverArt,
       Value<int> rowid,
     });
 typedef $$DeviceSettingsTableTableUpdateCompanionBuilder =
@@ -3483,6 +3593,8 @@ typedef $$DeviceSettingsTableTableUpdateCompanionBuilder =
       Value<bool> useZipDownload,
       Value<String> customFilenameTemplate,
       Value<String> customFolderTemplate,
+      Value<bool> autoCleanMetadata,
+      Value<bool> autoShrinkCoverArt,
       Value<int> rowid,
     });
 
@@ -3552,6 +3664,16 @@ class $$DeviceSettingsTableTableFilterComposer
 
   ColumnFilters<String> get customFolderTemplate => $composableBuilder(
     column: $table.customFolderTemplate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoCleanMetadata => $composableBuilder(
+    column: $table.autoCleanMetadata,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get autoShrinkCoverArt => $composableBuilder(
+    column: $table.autoShrinkCoverArt,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -3624,6 +3746,16 @@ class $$DeviceSettingsTableTableOrderingComposer
     column: $table.customFolderTemplate,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get autoCleanMetadata => $composableBuilder(
+    column: $table.autoCleanMetadata,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get autoShrinkCoverArt => $composableBuilder(
+    column: $table.autoShrinkCoverArt,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$DeviceSettingsTableTableAnnotationComposer
@@ -3694,6 +3826,16 @@ class $$DeviceSettingsTableTableAnnotationComposer
     column: $table.customFolderTemplate,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get autoCleanMetadata => $composableBuilder(
+    column: $table.autoCleanMetadata,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get autoShrinkCoverArt => $composableBuilder(
+    column: $table.autoShrinkCoverArt,
+    builder: (column) => column,
+  );
 }
 
 class $$DeviceSettingsTableTableTableManager
@@ -3751,6 +3893,8 @@ class $$DeviceSettingsTableTableTableManager
                 Value<bool> useZipDownload = const Value.absent(),
                 Value<String> customFilenameTemplate = const Value.absent(),
                 Value<String> customFolderTemplate = const Value.absent(),
+                Value<bool> autoCleanMetadata = const Value.absent(),
+                Value<bool> autoShrinkCoverArt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DeviceSettingsTableCompanion(
                 devicePath: devicePath,
@@ -3765,6 +3909,8 @@ class $$DeviceSettingsTableTableTableManager
                 useZipDownload: useZipDownload,
                 customFilenameTemplate: customFilenameTemplate,
                 customFolderTemplate: customFolderTemplate,
+                autoCleanMetadata: autoCleanMetadata,
+                autoShrinkCoverArt: autoShrinkCoverArt,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3781,6 +3927,8 @@ class $$DeviceSettingsTableTableTableManager
                 Value<bool> useZipDownload = const Value.absent(),
                 Value<String> customFilenameTemplate = const Value.absent(),
                 Value<String> customFolderTemplate = const Value.absent(),
+                Value<bool> autoCleanMetadata = const Value.absent(),
+                Value<bool> autoShrinkCoverArt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => DeviceSettingsTableCompanion.insert(
                 devicePath: devicePath,
@@ -3795,6 +3943,8 @@ class $$DeviceSettingsTableTableTableManager
                 useZipDownload: useZipDownload,
                 customFilenameTemplate: customFilenameTemplate,
                 customFolderTemplate: customFolderTemplate,
+                autoCleanMetadata: autoCleanMetadata,
+                autoShrinkCoverArt: autoShrinkCoverArt,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

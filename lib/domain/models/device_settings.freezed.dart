@@ -49,6 +49,15 @@ mixin _$DeviceSettings {
   /// `{title}` (a folder per song would defeat the purpose).
   String get customFolderTemplate => throw _privateConstructorUsedError;
 
+  /// Strip embedded-DAP-parser-hostile tags (multi-line LYRICS, duplicate
+  /// GENRE, leaked ffmpeg container atoms) from every FLAC as it lands.
+  bool get autoCleanMetadata => throw _privateConstructorUsedError;
+
+  /// Shrink embedded album art to a 320 px longest edge (Shanling M-series
+  /// screen height) on transfer. Saves several MB per album; lossless audio
+  /// stream is untouched.
+  bool get autoShrinkCoverArt => throw _privateConstructorUsedError;
+
   /// Create a copy of DeviceSettings
   /// with the given fields replaced by the non-null parameter values.
   @JsonKey(includeFromJson: false, includeToJson: false)
@@ -76,6 +85,8 @@ abstract class $DeviceSettingsCopyWith<$Res> {
     bool useZipDownload,
     String customFilenameTemplate,
     String customFolderTemplate,
+    bool autoCleanMetadata,
+    bool autoShrinkCoverArt,
   });
 }
 
@@ -106,6 +117,8 @@ class _$DeviceSettingsCopyWithImpl<$Res, $Val extends DeviceSettings>
     Object? useZipDownload = null,
     Object? customFilenameTemplate = null,
     Object? customFolderTemplate = null,
+    Object? autoCleanMetadata = null,
+    Object? autoShrinkCoverArt = null,
   }) {
     return _then(
       _value.copyWith(
@@ -157,6 +170,14 @@ class _$DeviceSettingsCopyWithImpl<$Res, $Val extends DeviceSettings>
                 ? _value.customFolderTemplate
                 : customFolderTemplate // ignore: cast_nullable_to_non_nullable
                       as String,
+            autoCleanMetadata: null == autoCleanMetadata
+                ? _value.autoCleanMetadata
+                : autoCleanMetadata // ignore: cast_nullable_to_non_nullable
+                      as bool,
+            autoShrinkCoverArt: null == autoShrinkCoverArt
+                ? _value.autoShrinkCoverArt
+                : autoShrinkCoverArt // ignore: cast_nullable_to_non_nullable
+                      as bool,
           )
           as $Val,
     );
@@ -185,6 +206,8 @@ abstract class _$$DeviceSettingsImplCopyWith<$Res>
     bool useZipDownload,
     String customFilenameTemplate,
     String customFolderTemplate,
+    bool autoCleanMetadata,
+    bool autoShrinkCoverArt,
   });
 }
 
@@ -214,6 +237,8 @@ class __$$DeviceSettingsImplCopyWithImpl<$Res>
     Object? useZipDownload = null,
     Object? customFilenameTemplate = null,
     Object? customFolderTemplate = null,
+    Object? autoCleanMetadata = null,
+    Object? autoShrinkCoverArt = null,
   }) {
     return _then(
       _$DeviceSettingsImpl(
@@ -265,6 +290,14 @@ class __$$DeviceSettingsImplCopyWithImpl<$Res>
             ? _value.customFolderTemplate
             : customFolderTemplate // ignore: cast_nullable_to_non_nullable
                   as String,
+        autoCleanMetadata: null == autoCleanMetadata
+            ? _value.autoCleanMetadata
+            : autoCleanMetadata // ignore: cast_nullable_to_non_nullable
+                  as bool,
+        autoShrinkCoverArt: null == autoShrinkCoverArt
+            ? _value.autoShrinkCoverArt
+            : autoShrinkCoverArt // ignore: cast_nullable_to_non_nullable
+                  as bool,
       ),
     );
   }
@@ -286,6 +319,8 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
     this.useZipDownload = true,
     this.customFilenameTemplate = '',
     this.customFolderTemplate = '',
+    this.autoCleanMetadata = true,
+    this.autoShrinkCoverArt = true,
   }) : super._();
 
   @override
@@ -342,9 +377,22 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
   @JsonKey()
   final String customFolderTemplate;
 
+  /// Strip embedded-DAP-parser-hostile tags (multi-line LYRICS, duplicate
+  /// GENRE, leaked ffmpeg container atoms) from every FLAC as it lands.
+  @override
+  @JsonKey()
+  final bool autoCleanMetadata;
+
+  /// Shrink embedded album art to a 320 px longest edge (Shanling M-series
+  /// screen height) on transfer. Saves several MB per album; lossless audio
+  /// stream is untouched.
+  @override
+  @JsonKey()
+  final bool autoShrinkCoverArt;
+
   @override
   String toString() {
-    return 'DeviceSettings(devicePath: $devicePath, musicRootFolder: $musicRootFolder, playlistFolder: $playlistFolder, folderStructure: $folderStructure, filenameFormat: $filenameFormat, includeYear: $includeYear, overwriteExisting: $overwriteExisting, transcodeFormat: $transcodeFormat, transcodeMaxBitRate: $transcodeMaxBitRate, useZipDownload: $useZipDownload, customFilenameTemplate: $customFilenameTemplate, customFolderTemplate: $customFolderTemplate)';
+    return 'DeviceSettings(devicePath: $devicePath, musicRootFolder: $musicRootFolder, playlistFolder: $playlistFolder, folderStructure: $folderStructure, filenameFormat: $filenameFormat, includeYear: $includeYear, overwriteExisting: $overwriteExisting, transcodeFormat: $transcodeFormat, transcodeMaxBitRate: $transcodeMaxBitRate, useZipDownload: $useZipDownload, customFilenameTemplate: $customFilenameTemplate, customFolderTemplate: $customFolderTemplate, autoCleanMetadata: $autoCleanMetadata, autoShrinkCoverArt: $autoShrinkCoverArt)';
   }
 
   @override
@@ -375,7 +423,11 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
             (identical(other.customFilenameTemplate, customFilenameTemplate) ||
                 other.customFilenameTemplate == customFilenameTemplate) &&
             (identical(other.customFolderTemplate, customFolderTemplate) ||
-                other.customFolderTemplate == customFolderTemplate));
+                other.customFolderTemplate == customFolderTemplate) &&
+            (identical(other.autoCleanMetadata, autoCleanMetadata) ||
+                other.autoCleanMetadata == autoCleanMetadata) &&
+            (identical(other.autoShrinkCoverArt, autoShrinkCoverArt) ||
+                other.autoShrinkCoverArt == autoShrinkCoverArt));
   }
 
   @override
@@ -393,6 +445,8 @@ class _$DeviceSettingsImpl extends _DeviceSettings {
     useZipDownload,
     customFilenameTemplate,
     customFolderTemplate,
+    autoCleanMetadata,
+    autoShrinkCoverArt,
   );
 
   /// Create a copy of DeviceSettings
@@ -421,6 +475,8 @@ abstract class _DeviceSettings extends DeviceSettings {
     final bool useZipDownload,
     final String customFilenameTemplate,
     final String customFolderTemplate,
+    final bool autoCleanMetadata,
+    final bool autoShrinkCoverArt,
   }) = _$DeviceSettingsImpl;
   const _DeviceSettings._() : super._();
 
@@ -467,6 +523,17 @@ abstract class _DeviceSettings extends DeviceSettings {
   /// `{title}` (a folder per song would defeat the purpose).
   @override
   String get customFolderTemplate;
+
+  /// Strip embedded-DAP-parser-hostile tags (multi-line LYRICS, duplicate
+  /// GENRE, leaked ffmpeg container atoms) from every FLAC as it lands.
+  @override
+  bool get autoCleanMetadata;
+
+  /// Shrink embedded album art to a 320 px longest edge (Shanling M-series
+  /// screen height) on transfer. Saves several MB per album; lossless audio
+  /// stream is untouched.
+  @override
+  bool get autoShrinkCoverArt;
 
   /// Create a copy of DeviceSettings
   /// with the given fields replaced by the non-null parameter values.

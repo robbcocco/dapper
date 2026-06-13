@@ -7,6 +7,7 @@ enum SidebarSection {
   songs,
   genres,
   playlists,
+  spotifyImport,
   lidarr,
   device,
   settings,

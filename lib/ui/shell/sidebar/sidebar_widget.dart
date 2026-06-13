@@ -353,6 +353,19 @@ class _PlaylistsSectionHeader extends ConsumerWidget {
             ),
           ),
           GestureDetector(
+            onTap: () {
+              ref.read(searchQueryProvider.notifier).state = '';
+              ref.read(selectedSectionProvider.notifier).state =
+                  SidebarSection.spotifyImport;
+            },
+            child: const Tooltip(
+              message: 'Import from Spotify',
+              child: Icon(Icons.cloud_download_outlined,
+                  size: 14, color: ColorTokens.textSecondary),
+            ),
+          ),
+          const SizedBox(width: 8),
+          GestureDetector(
             onTap: () => _createPlaylist(context, ref),
             child: const Icon(Icons.add,
                 size: 14, color: ColorTokens.textSecondary),

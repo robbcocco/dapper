@@ -271,7 +271,7 @@ class _ArtistDetailPanel extends ConsumerWidget {
                       height: 88,
                       child: CoverArtImage(
                         coverArtId: artist.coverArtId,
-                        size: 176,
+                        size: AppConstants.gridCoverArtSize,
                         borderRadius: 44,
                       ),
                     ),
@@ -809,7 +809,7 @@ class _AlbumSection extends ConsumerWidget {
                   height: 52,
                   child: CoverArtImage(
                     coverArtId: album.coverArtId,
-                    size: 104,
+                    size: AppConstants.gridCoverArtSize,
                     borderRadius: 6,
                   ),
                 ),

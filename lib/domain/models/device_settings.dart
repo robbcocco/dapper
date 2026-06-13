@@ -86,6 +86,13 @@ class DeviceSettings with _$DeviceSettings {
     /// independently. Same tokens as [customFilenameTemplate], minus
     /// `{title}` (a folder per song would defeat the purpose).
     @Default('') String customFolderTemplate,
+    /// Strip embedded-DAP-parser-hostile tags (multi-line LYRICS, duplicate
+    /// GENRE, leaked ffmpeg container atoms) from every FLAC as it lands.
+    @Default(true) bool autoCleanMetadata,
+    /// Shrink embedded album art to a 320 px longest edge (Shanling M-series
+    /// screen height) on transfer. Saves several MB per album; lossless audio
+    /// stream is untouched.
+    @Default(true) bool autoShrinkCoverArt,
   }) = _DeviceSettings;
 
   const DeviceSettings._();

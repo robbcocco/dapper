@@ -451,7 +451,10 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         },
       );
       await removeMacOSSidecar(targetPath);
-      await sanitizeFlacTags(targetPath);
+      if (settings.autoCleanMetadata) await sanitizeFlacTags(targetPath);
+      if (settings.autoShrinkCoverArt) {
+        await shrinkFlacEmbeddedPicture(targetPath);
+      }
 
       _updateTask(task.id,
           (t) => t.copyWith(status: TransferStatus.completed));
@@ -663,6 +666,17 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
             final expectedCount = msg['expectedCount'] as int?;
             final sibling = groupTasks
                 .firstWhere((t) => t.song.id == songId);
+
+            // Tag clean + cover-art shrink before flipping to completed so
+            // the file the user sees is the final on-device version. Both
+            // gated by per-device toggles. shrinkFlacEmbeddedPicture runs in
+            // its own isolate so it doesn't block the main isolate.
+            if (settings.autoCleanMetadata) {
+              await sanitizeFlacTags(targetPath);
+            }
+            if (settings.autoShrinkCoverArt) {
+              await shrinkFlacEmbeddedPicture(targetPath);
+            }
 
             // Flip this one sibling — small, frequent state mutations are
             // fine here because each row's .select() lookup makes the

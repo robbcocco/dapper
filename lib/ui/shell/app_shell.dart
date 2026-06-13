@@ -22,6 +22,7 @@ import '../pages/search/search_page.dart';
 import '../pages/settings/settings_page.dart';
 import '../pages/setup/setup_page.dart';
 import '../pages/songs/songs_page.dart';
+import '../pages/spotify_import/spotify_import_page.dart';
 import 'app_shortcuts.dart';
 import 'bottom_bar/bottom_bar_widget.dart';
 import 'sidebar/sidebar_widget.dart';
@@ -228,6 +229,7 @@ class _MainPanel extends ConsumerWidget {
               SidebarSection.songs => const SongsPage(),
               SidebarSection.genres => const GenresPage(),
               SidebarSection.playlists => const PlaylistsPage(),
+              SidebarSection.spotifyImport => const SpotifyImportPage(),
               SidebarSection.lidarr => const LidarrPage(),
               SidebarSection.device => const DevicePage(),
               SidebarSection.settings => const SettingsPage(),

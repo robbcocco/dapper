@@ -72,6 +72,8 @@ Map<String, dynamic> settingsToMap(DeviceSettings s) => {
       'useZipDownload': s.useZipDownload,
       'customFilenameTemplate': s.customFilenameTemplate,
       'customFolderTemplate': s.customFolderTemplate,
+      'autoCleanMetadata': s.autoCleanMetadata,
+      'autoShrinkCoverArt': s.autoShrinkCoverArt,
     };
 
 DeviceSettings settingsFromMap(Map<String, dynamic> m) => DeviceSettings(
@@ -93,6 +95,8 @@ DeviceSettings settingsFromMap(Map<String, dynamic> m) => DeviceSettings(
       useZipDownload: (m['useZipDownload'] as bool?) ?? true,
       customFilenameTemplate: (m['customFilenameTemplate'] as String?) ?? '',
       customFolderTemplate: (m['customFolderTemplate'] as String?) ?? '',
+      autoCleanMetadata: (m['autoCleanMetadata'] as bool?) ?? true,
+      autoShrinkCoverArt: (m['autoShrinkCoverArt'] as bool?) ?? true,
     );
 
 /// Streaming variant: extracts the zip inside an isolate but fires per-song
@@ -419,7 +423,9 @@ Future<ZipExtractResult> extractAlbumZip({
       if (removeMacosSidecars) {
         await removeMacOSSidecar(target);
       }
-      await sanitizeFlacTags(target);
+      if (settings.autoCleanMetadata) {
+        await sanitizeFlacTags(target);
+      }
 
       matchedIds.add(song.id);
       extracted.add(ExtractedSong(
