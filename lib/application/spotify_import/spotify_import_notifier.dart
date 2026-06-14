@@ -8,9 +8,11 @@ import 'song_matcher.dart';
 import 'spotify_import_state.dart';
 
 class SpotifyImportNotifier extends Notifier<SpotifyImportState> {
-  SpotifyImportNotifier({SpotifyScraper? scraper}) : _scraper = scraper ?? SpotifyScraper();
+  SpotifyImportNotifier({PlaylistScraper? scraper}) : _injected = scraper;
 
-  final SpotifyScraper _scraper;
+  /// Optional test/override scraper. When null, the notifier picks one
+  /// automatically per-URL via [PlaylistScraper.detect].
+  final PlaylistScraper? _injected;
 
   @override
   SpotifyImportState build() => const ImportIdle();
@@ -30,9 +32,17 @@ class SpotifyImportNotifier extends Notifier<SpotifyImportState> {
       return;
     }
 
+    final scraper = _injected ?? PlaylistScraper.detect(urlOrId);
+    if (scraper == null) {
+      state = const ImportError(
+          'That link is not from a supported provider. Paste a Spotify '
+          'or Tidal playlist URL.');
+      return;
+    }
+
     state = const ImportScraping();
     try {
-      final playlist = await _scraper.fetchPlaylist(urlOrId);
+      final playlist = await scraper.fetchPlaylist(urlOrId);
       state = ImportMatching(
         playlistName: playlist.name,
         done: 0,

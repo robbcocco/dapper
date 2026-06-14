@@ -150,6 +150,68 @@ class LidarrAlbum {
   }
 }
 
+/// One result from `GET /api/v1/album/lookup`. Carries enough metadata to
+/// render a result row and the raw JSON so it can be POSTed straight back
+/// to `POST /api/v1/album` with a couple of overrides (monitored, addOptions).
+class LidarrAlbumLookup {
+  const LidarrAlbumLookup({
+    required this.lidarrAlbumId,
+    required this.foreignAlbumId,
+    required this.title,
+    required this.artistName,
+    required this.artistMbid,
+    required this.raw,
+    this.releaseDate,
+    this.coverUrl,
+    this.albumType,
+  });
+
+  /// Lidarr's internal album id. 0 means the album is a lookup-only row
+  /// not yet added to Lidarr.
+  final int lidarrAlbumId;
+
+  final String foreignAlbumId;
+  final String title;
+  final String artistName;
+  final String artistMbid;
+
+  bool get isInLidarr => lidarrAlbumId > 0;
+
+  final String? releaseDate;
+  final String? coverUrl;
+  final LidarrAlbumType? albumType;
+
+  final Map<String, dynamic> raw;
+
+  int? get year {
+    if (releaseDate == null || releaseDate!.isEmpty) return null;
+    return int.tryParse(releaseDate!.split('-').first);
+  }
+
+  factory LidarrAlbumLookup.fromJson(Map<String, dynamic> json) {
+    final images = (json['images'] as List<dynamic>?)
+            ?.cast<Map<String, dynamic>>() ??
+        [];
+    final cover = images
+        .where((img) => img['coverType'] == 'cover')
+        .map((img) => img['remoteUrl'] as String? ?? img['url'] as String?)
+        .whereType<String>()
+        .firstOrNull;
+    final artist = json['artist'] as Map<String, dynamic>?;
+    return LidarrAlbumLookup(
+      lidarrAlbumId: json['id'] as int? ?? 0,
+      foreignAlbumId: json['foreignAlbumId'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      artistName: artist?['artistName'] as String? ?? '',
+      artistMbid: artist?['foreignArtistId'] as String? ?? '',
+      releaseDate: json['releaseDate'] as String?,
+      coverUrl: cover,
+      albumType: LidarrAlbumType.fromString(json['albumType'] as String?),
+      raw: json,
+    );
+  }
+}
+
 class LidarrRelease {
   const LidarrRelease({
     required this.guid,

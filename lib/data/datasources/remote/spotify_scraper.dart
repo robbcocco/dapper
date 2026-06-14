@@ -4,6 +4,26 @@ import 'dart:developer' as dev;
 import 'package:dio/dio.dart';
 
 import '../../../domain/models/spotify_track.dart';
+import 'tidal_scraper.dart';
+
+/// Abstract scraper interface — one impl per upstream playlist provider.
+/// Implementations throw [SpotifyScrapeException] (kept under the legacy
+/// name) for any user-actionable parse / network failure.
+abstract class PlaylistScraper {
+  Future<SpotifyPlaylistData> fetchPlaylist(String idOrUrl);
+
+  /// Returns the first scraper that recognises [input] (URL or bare id),
+  /// or null when no provider matches.
+  static PlaylistScraper? detect(String input) {
+    if (SpotifyScraper.parsePlaylistId(input) != null) {
+      return SpotifyScraper();
+    }
+    if (TidalScraper.parsePlaylistId(input) != null) {
+      return TidalScraper();
+    }
+    return null;
+  }
+}
 
 /// Scrapes a public Spotify playlist via the unauthenticated embed page.
 ///
@@ -12,7 +32,7 @@ import '../../../domain/models/spotify_track.dart';
 /// playlist metadata + track list. There is no documented API contract, so
 /// the parser tolerates several shapes and any change on Spotify's side
 /// surfaces as a [SpotifyScrapeException] rather than a silent failure.
-class SpotifyScraper {
+class SpotifyScraper implements PlaylistScraper {
   SpotifyScraper({Dio? dio})
       : _dio = dio ??
             Dio(BaseOptions(
@@ -54,6 +74,7 @@ class SpotifyScraper {
     return null;
   }
 
+  @override
   Future<SpotifyPlaylistData> fetchPlaylist(String idOrUrl) async {
     final id = parsePlaylistId(idOrUrl);
     if (id == null) {
@@ -142,6 +163,7 @@ class SpotifyScraper {
       name: name,
       tracks: tracks,
       truncated: truncated,
+      provider: PlaylistProvider.spotify,
     );
   }
 

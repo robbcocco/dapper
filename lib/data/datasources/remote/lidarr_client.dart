@@ -74,6 +74,56 @@ class LidarrClient {
         .toList();
   }
 
+  Future<List<LidarrAlbumLookup>> lookupAlbums(String term) async {
+    final resp = await _dio.get<List<dynamic>>(
+      '/api/v1/album/lookup',
+      queryParameters: {'term': term},
+    );
+    return (resp.data ?? [])
+        .cast<Map<String, dynamic>>()
+        .map(LidarrAlbumLookup.fromJson)
+        .toList();
+  }
+
+  /// Adds an album from a lookup result. When the album's artist isn't yet
+  /// in Lidarr, the nested artist payload tells Lidarr to create the
+  /// artist with the supplied root folder + quality profile in the same
+  /// call. [searchOnAdd] triggers an immediate release grab.
+  ///
+  /// Returns the newly-created album's Lidarr id (or 0 if the response
+  /// didn't include one), so callers that want to open the interactive
+  /// release picker right after adding can do so without a follow-up
+  /// lookup round trip.
+  Future<int> addAlbum({
+    required LidarrAlbumLookup album,
+    required String rootFolderPath,
+    required int qualityProfileId,
+    bool searchOnAdd = true,
+  }) async {
+    final payload = Map<String, dynamic>.from(album.raw);
+    payload['monitored'] = true;
+    payload['addOptions'] = {
+      'addType': 'automatic',
+      'searchForNewAlbum': searchOnAdd,
+    };
+    final artist = Map<String, dynamic>.from(
+        (payload['artist'] as Map<String, dynamic>?) ?? const {});
+    artist['monitored'] = true;
+    artist['qualityProfileId'] = qualityProfileId;
+    artist['rootFolderPath'] = rootFolderPath;
+    artist['addOptions'] = {
+      'monitor': 'specificAlbum',
+      'searchForMissingAlbums': false,
+    };
+    payload['artist'] = artist;
+
+    final resp = await _dio.post<Map<String, dynamic>>(
+      '/api/v1/album',
+      data: payload,
+    );
+    return (resp.data?['id'] as int?) ?? 0;
+  }
+
   Future<List<LidarrAlbum>> getAlbumsByArtist(int artistId) async {
     final resp = await _dio.get<List<dynamic>>(
       '/api/v1/album',
