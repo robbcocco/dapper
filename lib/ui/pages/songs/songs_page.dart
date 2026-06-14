@@ -349,7 +349,7 @@ class _SongTableRow extends ConsumerWidget {
   }
 
   void _showMenu(BuildContext ctx, WidgetRef ref, Offset pos) async {
-    final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.read(connectedDevicesProvider).value ?? [];
     // Bulk-aware menu: when this row sits inside an active selection that
     // includes more than one song, the transfer / playlist actions operate
     // on the whole selection.

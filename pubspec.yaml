@@ -1,7 +1,7 @@
 name: dapper
 description: "Transfer music from Navidrome to your DAP — iTunes-inspired desktop app."
 publish_to: 'none'
-version: 1.2.1
+version: 1.2.2
 
 environment:
   sdk: ^3.12.0
@@ -14,41 +14,41 @@ dependencies:
   dio: ^5.7.0
 
   # Zip extraction for album/artist bulk download
-  archive: ^3.6.1
+  archive: ^4.0.0
 
   # Image decode/resize/encode — used to shrink embedded album art so files
   # sent to small-screen DAPs don't carry server-sized covers.
-  image: ^4.3.0
+  image: ^4.9.0
 
   # State management
-  flutter_riverpod: ^2.6.1
-  riverpod_annotation: ^2.6.1
+  flutter_riverpod: ^3.3.0
+  riverpod_annotation: ^4.0.0
 
   # Immutable models & JSON
-  freezed_annotation: ^2.4.4
-  json_annotation: ^4.9.0
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.12.0
 
   # Local persistence
-  drift: ^2.23.1
-  sqlite3_flutter_libs: ^0.5.29
+  drift: ^2.34.0
+  sqlite3_flutter_libs: ^0.5.42
   path_provider: ^2.1.5
   path: ^1.9.1
 
   # Secure credential storage
-  flutter_secure_storage: ^9.2.4
+  flutter_secure_storage: ^10.0.0
 
   # Audio playback
-  just_audio: ^0.9.46
+  just_audio: ^0.10.0
   just_audio_windows: ^0.2.0
 
   # UI utilities
-  window_manager: ^0.4.3
+  window_manager: ^0.5.0
   macos_window_utils: ^1.4.0
   cached_network_image: ^3.4.1
 
   # Windows drive detection (win32 FFI)
   ffi: ^2.1.0
-  win32: ^5.5.0
+  win32: ^6.0.0
 
   # Crypto (MD5 for Subsonic auth)
   crypto: ^3.0.6
@@ -62,11 +62,11 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
   # Code generation
-  build_runner: ^2.4.15
-  riverpod_generator: ^2.6.3
-  freezed: ^2.5.7
-  json_serializable: ^6.9.0
-  drift_dev: ^2.23.1
+  build_runner: ^2.5.4
+  riverpod_generator: ^4.0.0
+  freezed: ^3.0.0
+  json_serializable: ^6.14.0
+  drift_dev: ^2.34.0
 
 flutter:
   uses-material-design: true

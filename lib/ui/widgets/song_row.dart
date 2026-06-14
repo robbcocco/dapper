@@ -193,7 +193,7 @@ class SongRow extends ConsumerWidget {
   }
 
   void _showMenu(BuildContext ctx, WidgetRef ref, Offset pos) async {
-    final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.read(connectedDevicesProvider).value ?? [];
     // Resolve bulk-selection context. Bulk menu items only appear when the
     // row is part of a multi-row selection AND the caller passed a song list
     // we can use to materialise the selected ids back into Song objects.

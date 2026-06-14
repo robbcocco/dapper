@@ -120,7 +120,7 @@ class _SidebarContent extends ConsumerWidget {
     final selected = ref.watch(selectedSectionProvider);
     final playlists = ref.watch(playlistsProvider);
     final device = ref.watch(selectedDeviceProvider);
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? [];
     return Container(
       width: AppConstants.sidebarWidth,
       color: ColorTokens.sidebarOverlay,

@@ -39,7 +39,7 @@ String _buildZip(Directory dir, Map<String, List<int>> entries) {
     archive.addFile(ArchiveFile(path, payload.length, payload));
   });
   final zipPath = p.join(dir.path, 'test.zip');
-  final bytes = ZipEncoder().encode(archive)!;
+  final bytes = ZipEncoder().encode(archive);
   File(zipPath).writeAsBytesSync(bytes);
   return zipPath;
 }

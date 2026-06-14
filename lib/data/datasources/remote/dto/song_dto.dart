@@ -4,7 +4,7 @@ part 'song_dto.freezed.dart';
 part 'song_dto.g.dart';
 
 @freezed
-class SongDto with _$SongDto {
+abstract class SongDto with _$SongDto {
   const factory SongDto({
     required String id,
     required String title,

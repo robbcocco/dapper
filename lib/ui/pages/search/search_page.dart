@@ -253,7 +253,7 @@ Future<void> _showSearchAlbumMenu(
   Album album,
   Offset pos,
 ) async {
-  final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
+  final devices = ref.read(connectedDevicesProvider).value ?? [];
 
   final result = await showMenu<String>(
     context: context,

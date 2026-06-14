@@ -46,7 +46,7 @@ class SongSelectionNotifier extends Notifier<SongSelectionState> {
     // the action bar non-functional. Drop the selection when the active
     // server id changes.
     ref.listen(selectedServerIdProvider, (prev, next) {
-      if (prev?.valueOrNull != next.valueOrNull) {
+      if (prev?.value != next.value) {
         state = const SongSelectionState();
       }
     });

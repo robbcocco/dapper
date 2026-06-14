@@ -72,11 +72,11 @@ class _ArtistAlbumsView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final artist = ref
         .watch(artistsProvider)
-        .valueOrNull
+        .value
         ?.fold<Artist?>(null, (prev, a) => a.id == artistId ? a : prev);
 
     final albums = ref.watch(albumsByArtistProvider(artistId));
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -369,7 +369,7 @@ class _AlbumCard extends ConsumerWidget {
         return (active, !active && queued);
       }),
     );
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? [];
 
     return GestureDetector(
       onTap: () =>

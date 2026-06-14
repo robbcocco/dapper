@@ -203,7 +203,7 @@ class _PlaylistContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final device = ref.watch(selectedDeviceProvider);
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? [];
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
     ref.watch(manifestRevisionProvider);

@@ -3,7 +3,7 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'connected_device.freezed.dart';
 
 @freezed
-class ConnectedDevice with _$ConnectedDevice {
+abstract class ConnectedDevice with _$ConnectedDevice {
   const factory ConnectedDevice({
     required String path,
     required String label,

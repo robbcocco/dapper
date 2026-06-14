@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../data/database/app_database.dart';
@@ -119,7 +120,7 @@ class ServersNotifier extends Notifier<List<NavidromeServer>> {
     final repo = ref.read(serverRepositoryProvider);
     await repo.delete(id);
     state = state.where((s) => s.id != id).toList();
-    if (ref.read(selectedServerIdProvider).valueOrNull == id) {
+    if (ref.read(selectedServerIdProvider).value == id) {
       await ref
           .read(selectedServerIdProvider.notifier)
           .select(state.isEmpty ? null : state.first.id);
@@ -155,7 +156,7 @@ final selectedServerIdProvider =
 
 /// The currently active [NavidromeServer], or null if none is selected.
 final selectedServerProvider = Provider<NavidromeServer?>((ref) {
-  final id = ref.watch(selectedServerIdProvider).valueOrNull;
+  final id = ref.watch(selectedServerIdProvider).value;
   if (id == null) return null;
   return ref.watch(serversProvider).where((s) => s.id == id).firstOrNull;
 });
@@ -187,7 +188,7 @@ class _ServerCredentials {
 // ── Subsonic layer ────────────────────────────────────────────────────────────
 
 final subsonicClientProvider = Provider<SubsonicClient?>((ref) {
-  final creds = ref.watch(serverCredentialsProvider).valueOrNull;
+  final creds = ref.watch(serverCredentialsProvider).value;
   if (creds == null) return null;
   final client = SubsonicClient(
     baseUrl: creds.url,
@@ -346,7 +347,7 @@ class LidarrInstancesNotifier extends Notifier<List<LidarrInstance>> {
     final repo = ref.read(lidarrRepositoryProvider);
     await repo.delete(id);
     state = state.where((i) => i.id != id).toList();
-    if (ref.read(selectedLidarrInstanceIdProvider).valueOrNull == id) {
+    if (ref.read(selectedLidarrInstanceIdProvider).value == id) {
       await ref
           .read(selectedLidarrInstanceIdProvider.notifier)
           .select(state.isEmpty ? null : state.first.id);
@@ -381,7 +382,7 @@ final selectedLidarrInstanceIdProvider =
 );
 
 final selectedLidarrInstanceProvider = Provider<LidarrInstance?>((ref) {
-  final id = ref.watch(selectedLidarrInstanceIdProvider).valueOrNull;
+  final id = ref.watch(selectedLidarrInstanceIdProvider).value;
   if (id == null) return null;
   return ref.watch(lidarrInstancesProvider).where((i) => i.id == id).firstOrNull;
 });
@@ -405,7 +406,7 @@ class _LidarrCredentials {
 }
 
 final lidarrClientProvider = Provider<LidarrClient?>((ref) {
-  final creds = ref.watch(lidarrCredentialsProvider).valueOrNull;
+  final creds = ref.watch(lidarrCredentialsProvider).value;
   if (creds == null) return null;
   return LidarrClient(baseUrl: creds.url, apiKey: creds.apiKey);
 });

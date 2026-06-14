@@ -5,9 +5,12 @@ import '../../data/database/app_database.dart';
 import '../../domain/models/device_settings.dart';
 import '../providers/providers.dart';
 
-class DeviceSettingsNotifier extends FamilyNotifier<DeviceSettings, String> {
+class DeviceSettingsNotifier extends Notifier<DeviceSettings> {
+  DeviceSettingsNotifier(this.devicePath);
+  final String devicePath;
+
   @override
-  DeviceSettings build(String devicePath) {
+  DeviceSettings build() {
     _loadFromDb(devicePath);
     return DeviceSettings(devicePath: devicePath);
   }

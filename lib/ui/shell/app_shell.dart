@@ -40,7 +40,7 @@ class AppShell extends ConsumerWidget {
     final creds = ref.watch(serverCredentialsProvider);
 
     ref.listen(connectedDevicesProvider, (_, next) {
-      final devices = next.valueOrNull ?? [];
+      final devices = next.value ?? [];
       final selected = ref.read(selectedDeviceProvider);
 
       if (selected != null) {
@@ -74,7 +74,7 @@ class AppShell extends ConsumerWidget {
       return const Scaffold(backgroundColor: ColorTokens.background);
     }
 
-    if (creds.valueOrNull == null) {
+    if (creds.value == null) {
       return const Scaffold(
         backgroundColor: ColorTokens.background,
         body: SetupPage(),

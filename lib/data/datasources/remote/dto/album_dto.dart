@@ -5,7 +5,7 @@ part 'album_dto.freezed.dart';
 part 'album_dto.g.dart';
 
 @freezed
-class AlbumDto with _$AlbumDto {
+abstract class AlbumDto with _$AlbumDto {
   const factory AlbumDto({
     required String id,
     required String name,

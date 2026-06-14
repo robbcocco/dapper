@@ -31,7 +31,7 @@ class SelectionActionBar extends ConsumerWidget {
         .where((s) => selection.selectedIds.contains(s.id))
         .toList(growable: false);
     final device = ref.watch(selectedDeviceProvider);
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? const [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? const [];
 
     void enqueueTo(ConnectedDevice target) {
       if (selectedSongs.isEmpty) return;

@@ -64,7 +64,7 @@ class _LidarrDetailLoader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final artists = ref.watch(lidarrArtistsProvider).valueOrNull ?? [];
+    final artists = ref.watch(lidarrArtistsProvider).value ?? [];
     final artist = artists.cast<LidarrArtist?>().firstWhere(
       (a) => a?.mbid == mbid,
       orElse: () => null,
@@ -333,7 +333,7 @@ class _LidarrLibraryFilterBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final customFilters = ref.watch(lidarrCustomFiltersProvider).valueOrNull ?? [];
+    final customFilters = ref.watch(lidarrCustomFiltersProvider).value ?? [];
     final selectedCustomId = ref.watch(selectedCustomFilterIdProvider);
 
     return Container(

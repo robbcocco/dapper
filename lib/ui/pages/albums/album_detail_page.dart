@@ -103,7 +103,7 @@ class _AlbumHeader extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final device = ref.watch(selectedDeviceProvider);
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? [];
     final songs = album.songs;
 
     return Padding(

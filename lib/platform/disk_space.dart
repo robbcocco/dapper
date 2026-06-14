@@ -67,9 +67,9 @@ int? _freeBytesWindows(String path) {
   final totalBytes = calloc<Uint64>();
   final totalFree = calloc<Uint64>();
   try {
-    final ok = GetDiskFreeSpaceEx(
-        pathPtr, freeToCaller, totalBytes, totalFree);
-    if (ok == 0) return null;
+    final result = GetDiskFreeSpaceEx(
+        PCWSTR(pathPtr), freeToCaller, totalBytes, totalFree);
+    if (!result.value) return null;
     return freeToCaller.value;
   } finally {
     calloc.free(pathPtr);

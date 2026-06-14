@@ -4,7 +4,7 @@ import 'song.dart';
 part 'playlist.freezed.dart';
 
 @freezed
-class Playlist with _$Playlist {
+abstract class Playlist with _$Playlist {
   const factory Playlist({
     required String id,
     required String name,

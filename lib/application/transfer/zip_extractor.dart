@@ -149,7 +149,7 @@ Future<void> extractAlbumZipStreaming(Map<String, dynamic> message) async {
 
     final input = InputFileStream(zipPath);
     try {
-      final archive = ZipDecoder().decodeBuffer(input);
+      final archive = ZipDecoder().decodeStream(input);
       for (final entry in archive) {
         if (!entry.isFile) continue;
         final name = entry.name;
@@ -363,7 +363,7 @@ Future<ZipExtractResult> extractAlbumZip({
   // decompresses lazily from it during writeContent.
   final input = InputFileStream(zipPath);
   try {
-    final archive = ZipDecoder().decodeBuffer(input);
+    final archive = ZipDecoder().decodeStream(input);
 
     for (final entry in archive) {
       if (isCancelled?.call() ?? false) break;

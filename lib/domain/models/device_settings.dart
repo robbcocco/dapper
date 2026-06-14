@@ -57,7 +57,7 @@ extension TranscodeFormatX on TranscodeFormat {
 }
 
 @freezed
-class DeviceSettings with _$DeviceSettings {
+abstract class DeviceSettings with _$DeviceSettings {
   const factory DeviceSettings({
     required String devicePath,
     @Default('') String musicRootFolder,

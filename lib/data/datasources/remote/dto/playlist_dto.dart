@@ -5,7 +5,7 @@ part 'playlist_dto.freezed.dart';
 part 'playlist_dto.g.dart';
 
 @freezed
-class PlaylistDto with _$PlaylistDto {
+abstract class PlaylistDto with _$PlaylistDto {
   const factory PlaylistDto({
     required String id,
     required String name,

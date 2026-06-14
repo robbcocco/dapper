@@ -426,7 +426,7 @@ class _DevicesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final storedAsync = ref.watch(allStoredDeviceSettingsProvider);
     final connectedDevices =
-        ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+        ref.watch(connectedDevicesProvider).value ?? [];
 
     return storedAsync.when(
       loading: () => const Center(child: CircularProgressIndicator()),

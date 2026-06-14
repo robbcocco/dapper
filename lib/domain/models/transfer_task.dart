@@ -6,7 +6,7 @@ part 'transfer_task.freezed.dart';
 enum TransferStatus { queued, inProgress, completed, failed, cancelled }
 
 @freezed
-class TransferTask with _$TransferTask {
+abstract class TransferTask with _$TransferTask {
   const factory TransferTask({
     required String id,
     required Song song,

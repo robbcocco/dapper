@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/legacy.dart';
 
 import '../../domain/models/artist.dart';
 import '../../domain/models/lidarr_models.dart';
@@ -16,7 +17,7 @@ final lidarrArtistsProvider = FutureProvider<List<LidarrArtist>>((ref) async {
 
 /// MBID → LidarrArtist map for O(1) cross-reference with Navidrome artists.
 final lidarrArtistByMbidProvider = Provider<Map<String, LidarrArtist>>((ref) {
-  final artists = ref.watch(lidarrArtistsProvider).valueOrNull ?? [];
+  final artists = ref.watch(lidarrArtistsProvider).value ?? [];
   return {
     for (final a in artists)
       if (a.mbid.isNotEmpty) a.mbid: a,
@@ -26,8 +27,8 @@ final lidarrArtistByMbidProvider = Provider<Map<String, LidarrArtist>>((ref) {
 /// Lidarr artists that have no matching Navidrome artist by MBID.
 /// These represent monitored artists not yet in the local library.
 final lidarrOnlyArtistsProvider = Provider<List<LidarrArtist>>((ref) {
-  final lidarrArtists = ref.watch(lidarrArtistsProvider).valueOrNull ?? [];
-  final navArtists = ref.watch(artistsProvider).valueOrNull ?? [];
+  final lidarrArtists = ref.watch(lidarrArtistsProvider).value ?? [];
+  final navArtists = ref.watch(artistsProvider).value ?? [];
   final navMbids = navArtists
       .map((Artist a) => a.musicBrainzId)
       .whereType<String>()
@@ -70,12 +71,12 @@ final selectedCustomFilterIdProvider = StateProvider<int?>((_) => null);
 
 /// All Lidarr artists after applying whichever filter is active.
 final filteredLidarrArtistsProvider = Provider<List<LidarrArtist>>((ref) {
-  final all = ref.watch(lidarrArtistsProvider).valueOrNull ?? [];
+  final all = ref.watch(lidarrArtistsProvider).value ?? [];
   final customId = ref.watch(selectedCustomFilterIdProvider);
 
   if (customId != null) {
     final customs =
-        ref.watch(lidarrCustomFiltersProvider).valueOrNull ?? [];
+        ref.watch(lidarrCustomFiltersProvider).value ?? [];
     final cf = customs.where((f) => f.id == customId).firstOrNull;
     return cf != null ? all.where((a) => cf.matches(a)).toList() : all;
   }

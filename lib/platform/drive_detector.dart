@@ -167,14 +167,14 @@ class WindowsDriveDetector implements DriveDetector {
 
   static List<ConnectedDevice> _scan() {
     final result = <ConnectedDevice>[];
-    final bitmask = GetLogicalDrives();
+    final bitmask = GetLogicalDrives().value;
     for (var bit = 0; bit < 26; bit++) {
       if (bitmask & (1 << bit) == 0) continue;
       final letter = String.fromCharCode('A'.codeUnitAt(0) + bit);
       final root = '$letter:\\';
       final rootPtr = root.toNativeUtf16();
       try {
-        if (GetDriveType(rootPtr) != DRIVE_REMOVABLE) continue;
+        if (GetDriveType(PCWSTR(rootPtr)) != DRIVE_REMOVABLE) continue;
         final device = _queryVolume(root, rootPtr, letter);
         if (device != null) result.add(device);
       } finally {
@@ -194,16 +194,16 @@ class WindowsDriveDetector implements DriveDetector {
     final freeBytes = calloc<Uint64>();
     try {
       GetVolumeInformation(
-        rootPtr,
-        labelBuf.cast(),
+        PCWSTR(rootPtr),
+        PWSTR(labelBuf.cast<Utf16>()),
         MAX_PATH + 1,
         nullptr,
         nullptr,
         nullptr,
-        nullptr,
+        null,
         0,
       );
-      GetDiskFreeSpaceEx(rootPtr, nullptr, totalBytes, freeBytes);
+      GetDiskFreeSpaceEx(PCWSTR(rootPtr), nullptr, totalBytes, freeBytes);
       final label = labelBuf.cast<Utf16>().toDartString();
       return ConnectedDevice(
         path: root,

@@ -102,7 +102,7 @@ class _ArtistListPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final deviceSync = ref.watch(artistSyncProvider).valueOrNull ?? {};
+    final deviceSync = ref.watch(artistSyncProvider).value ?? {};
 
     return SizedBox(
       width: AppConstants.artistTreeWidth,
@@ -234,13 +234,13 @@ class _ArtistDetailPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final albumsAsync = ref.watch(albumsByArtistProvider(artist.id));
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? [];
 
     // Fetch Lidarr albums when this artist is linked; build a normalized-title map.
     final lidarrAlbums = lidarrArtist != null
         ? ref
             .watch(lidarrAlbumsByArtistProvider(lidarrArtist!.id))
-            .valueOrNull ?? <LidarrAlbum>[]
+            .value ?? <LidarrAlbum>[]
         : <LidarrAlbum>[];
     final lidarrByTitle = {
       for (final a in lidarrAlbums) _normalizeTitle(a.title): a,
@@ -789,7 +789,7 @@ class _AlbumSection extends ConsumerWidget {
         return (active, !active && queued);
       }),
     );
-    final devices = ref.watch(connectedDevicesProvider).valueOrNull ?? [];
+    final devices = ref.watch(connectedDevicesProvider).value ?? [];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1121,7 +1121,7 @@ class _ArtistSelectionBar extends ConsumerWidget {
       return const SizedBox.shrink();
     }
     final albumId = scope.substring('album:'.length);
-    final album = ref.watch(albumProvider(albumId)).valueOrNull;
+    final album = ref.watch(albumProvider(albumId)).value;
     if (album == null) return const SizedBox.shrink();
     return SelectionActionBar(scopeKey: scope, allSongs: album.songs);
   }
@@ -1133,7 +1133,7 @@ Future<void> _showArtistMenu(
   Artist artist,
   Offset pos,
 ) async {
-  final devices = ref.read(connectedDevicesProvider).valueOrNull ?? [];
+  final devices = ref.read(connectedDevicesProvider).value ?? [];
 
   final result = await showMenu<String>(
     context: context,

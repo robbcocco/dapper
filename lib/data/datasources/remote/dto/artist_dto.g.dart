@@ -6,16 +6,15 @@ part of 'artist_dto.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-_$ArtistDtoImpl _$$ArtistDtoImplFromJson(Map<String, dynamic> json) =>
-    _$ArtistDtoImpl(
-      id: json['id'] as String,
-      name: json['name'] as String,
-      coverArtId: json['coverArt'] as String?,
-      albumCount: (json['albumCount'] as num?)?.toInt() ?? 0,
-      musicBrainzId: json['musicBrainzId'] as String?,
-    );
+_ArtistDto _$ArtistDtoFromJson(Map<String, dynamic> json) => _ArtistDto(
+  id: json['id'] as String,
+  name: json['name'] as String,
+  coverArtId: json['coverArt'] as String?,
+  albumCount: (json['albumCount'] as num?)?.toInt() ?? 0,
+  musicBrainzId: json['musicBrainzId'] as String?,
+);
 
-Map<String, dynamic> _$$ArtistDtoImplToJson(_$ArtistDtoImpl instance) =>
+Map<String, dynamic> _$ArtistDtoToJson(_ArtistDto instance) =>
     <String, dynamic>{
       'id': instance.id,
       'name': instance.name,

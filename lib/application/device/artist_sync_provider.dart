@@ -28,7 +28,7 @@ final artistSyncProvider = FutureProvider<Map<String, ArtistSyncStatus>>((ref) a
   if (device == null) return {};
 
   final settings = ref.watch(deviceSettingsProvider(device.path));
-  final artists = ref.watch(artistsProvider).valueOrNull ?? [];
+  final artists = ref.watch(artistsProvider).value ?? [];
   if (artists.isEmpty) return {};
 
   // Recompute whenever a transfer to this device completes.
