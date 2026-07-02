@@ -227,6 +227,7 @@ class _FolderNodeState extends State<_FolderNode> {
             child: Row(
               children: [
                 GestureDetector(
+                  behavior: HitTestBehavior.opaque,
                   onTap: _toggle,
                   child: SizedBox(
                     width: 16,

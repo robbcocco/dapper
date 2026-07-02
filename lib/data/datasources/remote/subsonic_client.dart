@@ -69,17 +69,10 @@ class SubsonicClient {
   /// `https://music.example.com/rest/...`, which used to silently break cover
   /// art and downloads on subpath deployments.
   Uri buildUri(String path, Map<String, dynamic> extraParams) {
-    final salt = _generateSalt();
-    final token = _md5Hash('$_password$salt');
-    // Note: each buildUri call gets its own salt so multiple cover-art / stream
-    // URIs generated in the same millisecond don't collide.
-    final params = {
-      'u': _username,
-      't': token,
-      's': salt,
-      'v': ApiConstants.apiVersion,
-      'c': ApiConstants.clientName,
-      'f': ApiConstants.responseFormat,
+    // Each buildUri call gets its own salt (via authParams) so multiple
+    // cover-art / stream URIs generated in the same millisecond don't collide.
+    final params = <String, dynamic>{
+      ...authParams(_username, _password),
       ...extraParams,
     };
     final base = Uri.parse(_baseUrl);
@@ -89,6 +82,21 @@ class SubsonicClient {
       path: '$basePath$endpoint',
       queryParameters: params.map((k, v) => MapEntry(k, v.toString())),
     );
+  }
+
+  /// Builds the Subsonic auth + format query params for [username]/[password].
+  /// Used by both [buildUri] and the request interceptor so the salt/token
+  /// signing logic lives in exactly one place. Each call generates a fresh salt.
+  static Map<String, String> authParams(String username, String password) {
+    final salt = _generateSalt();
+    return {
+      'u': username,
+      't': _md5Hash('$password$salt'),
+      's': salt,
+      'v': ApiConstants.apiVersion,
+      'c': ApiConstants.clientName,
+      'f': ApiConstants.responseFormat,
+    };
   }
 
   static String _md5Hash(String input) =>
@@ -103,18 +111,8 @@ class _AuthInterceptor extends Interceptor {
 
   @override
   void onRequest(RequestOptions options, RequestInterceptorHandler handler) {
-    final salt = _generateSalt();
-    final token = md5
-        .convert(utf8.encode('$_password$salt'))
-        .toString();
-    options.queryParameters.addAll({
-      'u': _username,
-      't': token,
-      's': salt,
-      'v': ApiConstants.apiVersion,
-      'c': ApiConstants.clientName,
-      'f': ApiConstants.responseFormat,
-    });
+    options.queryParameters
+        .addAll(SubsonicClient.authParams(_username, _password));
     handler.next(options);
   }
 }

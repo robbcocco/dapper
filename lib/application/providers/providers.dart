@@ -183,12 +183,41 @@ class _ServerCredentials {
   final String url;
   final String username;
   final String password;
+
+  // Value equality so libraryRepositoryProvider's invalidation guard
+  // (`prev?.value == next.value`) only rebuilds the Subsonic stack when the
+  // credentials actually change — not on every unrelated upstream recompute,
+  // which would needlessly close the Dio pool and drop in-flight requests.
+  @override
+  bool operator ==(Object other) =>
+      other is _ServerCredentials &&
+      other.url == url &&
+      other.username == username &&
+      other.password == password;
+
+  @override
+  int get hashCode => Object.hash(url, username, password);
 }
 
-// ── Subsonic layer ────────────────────────────────────────────────────────────
+// ── Repository ────────────────────────────────────────────────────────────────
+//
+// One sync Provider builds the whole Subsonic stack from credentials. The
+// upstream FutureProvider (serverCredentialsProvider) is consumed via
+// `ref.listen` + microtask-deferred `invalidateSelf` rather than `ref.watch`
+// so that the AsyncLoading → AsyncData transition does not trigger
+// setState-during-build inside Riverpod 3.3.x's scheduler when a downstream
+// FutureProvider mounts mid-build.
 
-final subsonicClientProvider = Provider<SubsonicClient?>((ref) {
-  final creds = ref.watch(serverCredentialsProvider).value;
+final libraryRepositoryProvider = Provider<LibraryRepository?>((ref) {
+  ref.listen<AsyncValue<_ServerCredentials?>>(serverCredentialsProvider,
+      (prev, next) {
+    if (prev?.value == next.value) return;
+    Future.microtask(() {
+      if (ref.mounted) ref.invalidateSelf();
+    });
+  });
+
+  final creds = ref.read(serverCredentialsProvider).value;
   if (creds == null) return null;
   final client = SubsonicClient(
     baseUrl: creds.url,
@@ -196,21 +225,7 @@ final subsonicClientProvider = Provider<SubsonicClient?>((ref) {
     password: creds.password,
   );
   ref.onDispose(client.dispose);
-  return client;
-});
-
-final subsonicApiProvider = Provider<SubsonicApi?>((ref) {
-  final client = ref.watch(subsonicClientProvider);
-  if (client == null) return null;
-  return SubsonicApi(client);
-});
-
-// ── Repository ────────────────────────────────────────────────────────────────
-
-final libraryRepositoryProvider = Provider<LibraryRepository?>((ref) {
-  final api = ref.watch(subsonicApiProvider);
-  if (api == null) return null;
-  return LibraryRepositoryImpl(api);
+  return LibraryRepositoryImpl(SubsonicApi(client));
 });
 
 // ── Device detection ──────────────────────────────────────────────────────────

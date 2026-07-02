@@ -110,6 +110,7 @@ class _ArtistRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         ref.read(selectedArtistIdProvider.notifier).state = artist.id;
         ref.read(selectedAlbumIdProvider.notifier).state = null;
@@ -156,6 +157,7 @@ class _AlbumRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         ref.read(selectedAlbumIdProvider.notifier).state = album.id;
         ref.read(selectedSectionProvider.notifier).state = SidebarSection.albums;

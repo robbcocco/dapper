@@ -213,6 +213,7 @@ class _SongTableRow extends ConsumerWidget {
         s.matches(scopeKey) && s.isSelected(song.id)));
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         final keyboard = HardwareKeyboard.instance;
         final notifier = ref.read(songSelectionProvider.notifier);

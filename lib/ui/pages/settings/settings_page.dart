@@ -2,12 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import '../../../application/lidarr/lidarr_notifier.dart';
 import '../../../application/providers/providers.dart';
+import '../../../application/transfer/transfer_queue_notifier.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/format/byte_format.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/lidarr_models.dart';
@@ -130,6 +133,36 @@ class _GeneralTab extends ConsumerWidget {
         const Divider(color: ColorTokens.glassBorder),
         const SizedBox(height: 20),
         const Text(
+          'Cache',
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: ColorTokens.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Removes leftover temporary transfer files and cached cover art. '
+          'Your servers, devices, and settings are kept.',
+          style: TextStyle(fontSize: 11, color: ColorTokens.textSecondary),
+        ),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton(
+            onPressed: () => _cleanCache(context, ref),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: ColorTokens.textPrimary,
+              side: const BorderSide(color: ColorTokens.glassBorder),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text('Clean cache', style: TextStyle(fontSize: 13)),
+          ),
+        ),
+        const SizedBox(height: 40),
+        const Divider(color: ColorTokens.glassBorder),
+        const SizedBox(height: 20),
+        const Text(
           'Reset',
           style: TextStyle(
             fontSize: 15,
@@ -222,6 +255,60 @@ class _GeneralTab extends ConsumerWidget {
       final f = File(path);
       if (f.existsSync()) f.deleteSync();
     } catch (_) {}
+  }
+
+  // Wipes the tmp/ staging dir (orphaned transfer zips that didn't reach the
+  // engine's finally block) and the cover-art disk + memory caches. Leaves
+  // servers, credentials, device settings, and the queue untouched.
+  Future<void> _cleanCache(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    final supportDir = ref.read(appSupportDirProvider);
+
+    // The tmp/ dir holds in-flight zip downloads (zip_<groupId>.zip) that the
+    // transfer engine is actively writing. Deleting them mid-transfer corrupts
+    // the running download, so skip tmp cleanup entirely while any transfer is
+    // active — cover art is always safe to clear.
+    final hasActiveTransfers =
+        ref.read(transferQueueProvider).activeCount > 0;
+
+    var files = 0;
+    var bytes = 0;
+    if (!hasActiveTransfers) {
+      try {
+        final tmpDir = Directory(p.join(supportDir, 'tmp'));
+        if (tmpDir.existsSync()) {
+          for (final entity in tmpDir.listSync(recursive: true)) {
+            if (entity is! File) continue;
+            try {
+              bytes += entity.lengthSync();
+              entity.deleteSync();
+              files++;
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Cover-art disk cache (cached_network_image's default backend).
+    try {
+      await DefaultCacheManager().emptyCache();
+    } catch (_) {}
+    // In-memory decoded bitmaps so cleared art doesn't linger this session.
+    PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
+
+    final String message;
+    if (hasActiveTransfers) {
+      message = 'Cleared cover art. Skipped transfer staging — '
+          'a transfer is in progress.';
+    } else if (files == 0) {
+      message = 'Cache cleared';
+    } else {
+      message = 'Cleared $files leftover file${files == 1 ? '' : 's'} '
+          '(${formatBytes(bytes)}) and cover art';
+    }
+    messenger?.showSnackBar(SnackBar(content: Text(message)));
   }
 }
 

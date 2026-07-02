@@ -26,9 +26,14 @@ class _SearchBar extends ConsumerStatefulWidget {
 
 class _SearchBarState extends ConsumerState<_SearchBar> {
   final _ctrl = TextEditingController();
+  // Debounce the query provider so each keystroke doesn't spawn a new
+  // searchResultsProvider family entry (one HTTP round-trip each). Only the
+  // last keystroke in a ~300 ms window actually searches.
+  Timer? _debounce;
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _ctrl.dispose();
     super.dispose();
   }
@@ -60,7 +65,9 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
                 const BoxConstraints(minWidth: 28, minHeight: 26),
             suffixIcon: _ctrl.text.isNotEmpty
                 ? GestureDetector(
+                    behavior: HitTestBehavior.opaque,
                     onTap: () {
+                      _debounce?.cancel();
                       _ctrl.clear();
                       ref.read(searchQueryProvider.notifier).state = '';
                       setState(() {});
@@ -85,8 +92,12 @@ class _SearchBarState extends ConsumerState<_SearchBar> {
             ),
           ),
           onChanged: (v) {
+            // Refresh the clear-button visibility now; defer the actual query.
             setState(() {});
-            ref.read(searchQueryProvider.notifier).state = v;
+            _debounce?.cancel();
+            _debounce = Timer(const Duration(milliseconds: 300), () {
+              ref.read(searchQueryProvider.notifier).state = v;
+            });
           },
         ),
       ),
@@ -188,8 +199,6 @@ class _SidebarContent extends ConsumerWidget {
                   .map((p) => _PlaylistTile(
                         label: p.name,
                         playlistId: p.id,
-                        selected: selected,
-                        ref: ref,
                       ))
                   .toList(),
             ),
@@ -483,23 +492,23 @@ class _SidebarTile extends StatelessWidget {
   }
 }
 
-class _PlaylistTile extends StatelessWidget {
+class _PlaylistTile extends ConsumerWidget {
   const _PlaylistTile({
     required this.label,
     required this.playlistId,
-    required this.selected,
-    required this.ref,
   });
 
   final String label;
   final String playlistId;
-  final SidebarSection selected;
-  final WidgetRef ref;
 
   @override
-  Widget build(BuildContext context) {
-    final isSelected = selected == SidebarSection.playlists &&
-        ref.read(selectedPlaylistIdProvider) == playlistId;
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watch (not read) both selection providers so this tile rebuilds when the
+    // active playlist changes — otherwise the previously-selected tile keeps
+    // its highlight because nothing re-runs its build.
+    final isSelected =
+        ref.watch(selectedSectionProvider) == SidebarSection.playlists &&
+            ref.watch(selectedPlaylistIdProvider) == playlistId;
     return InkWell(
       onTap: () {
         ref.read(searchQueryProvider.notifier).state = '';

@@ -5,12 +5,16 @@ import 'dart:math';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../domain/models/album.dart';
 import '../../domain/models/song.dart';
 import '../../domain/repositories/library_repository.dart';
 import '../providers/providers.dart';
 import 'scrobble_rule.dart';
 
 enum RepeatMode { none, one, all }
+
+/// Max concurrent getAlbum round-trips when loading a whole artist for playback.
+const _albumFetchConcurrency = 6;
 
 class PlaybackState {
   const PlaybackState({
@@ -299,12 +303,18 @@ class PlaybackNotifier extends Notifier<PlaybackState> {
     state = state.copyWith(isBuffering: true, clearError: true);
     try {
       final albums = await repo.getAlbumsByArtist(artistId);
-      // Fetch album details in parallel — getAlbumsByArtist returns metadata
-      // only, getAlbum returns songs. Serial fetching previously meant N
-      // sequential round-trips; parallel runs in the time of the slowest one.
-      final fullAlbums = await Future.wait(
-        albums.map((album) => repo.getAlbum(album.id)),
-      );
+      // Fetch album details in bounded-parallel chunks — getAlbumsByArtist
+      // returns metadata only, getAlbum returns songs. Serial fetching meant N
+      // sequential round-trips; firing all N at once on a deep discography
+      // exhausts the connection pool and risks server-side rate limits. Chunks
+      // of `_albumFetchConcurrency` keep it fast without flooding.
+      final fullAlbums = <Album>[];
+      for (var i = 0; i < albums.length; i += _albumFetchConcurrency) {
+        final slice = albums.skip(i).take(_albumFetchConcurrency);
+        fullAlbums.addAll(
+          await Future.wait(slice.map((album) => repo.getAlbum(album.id))),
+        );
+      }
       final allSongs = [for (final a in fullAlbums) ...a.songs];
       if (allSongs.isEmpty) {
         state = state.copyWith(isBuffering: false);

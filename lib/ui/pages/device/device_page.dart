@@ -92,7 +92,11 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
   @override
   Widget build(BuildContext context) {
     final selected = ref.watch(selectedDeviceProvider);
-    final queue = ref.watch(transferQueueProvider);
+    // NOTE: deliberately NOT watching transferQueueProvider here. Doing so
+    // rebuilt the entire device page (header, tabs, file browser, scan UI) on
+    // every transfer status tick. The two queue-dependent spots — the badge
+    // and the Transfer Queue tab — are scoped to their own Consumers below so
+    // a burst of completions only repaints those, not the file browser.
     final settings = selected != null
         ? ref.watch(deviceSettingsProvider(selected.path))
         : null;
@@ -237,22 +241,29 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   const Text('Transfer Queue'),
-                  if (queue.activeCount > 0) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: ColorTokens.accent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        '${queue.activeCount}',
-                        style: const TextStyle(
-                            fontSize: 9, color: Colors.white),
-                      ),
-                    ),
-                  ],
+                  Consumer(
+                    builder: (context, ref, _) {
+                      final active = ref.watch(
+                          transferQueueProvider.select((q) => q.activeCount));
+                      if (active == 0) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: ColorTokens.accent,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$active',
+                            style: const TextStyle(
+                                fontSize: 9, color: Colors.white),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),
@@ -274,10 +285,16 @@ class _DeviceViewState extends ConsumerState<_DeviceView>
                       rootPath: settings?.resolvedMusicRoot ?? selected.path,
                     ),
 
-              // Transfer Queue
-              queue.isEmpty
-                  ? const _EmptyQueue()
-                  : _QueueList(queue: queue),
+              // Transfer Queue — own Consumer so queue ticks repaint only this
+              // tab, not the sibling file browser.
+              Consumer(
+                builder: (context, ref, _) {
+                  final queue = ref.watch(transferQueueProvider);
+                  return queue.isEmpty
+                      ? const _EmptyQueue()
+                      : _QueueList(queue: queue);
+                },
+              ),
             ],
           ),
         ),

@@ -85,6 +85,7 @@ class SongRow extends ConsumerWidget {
             : Colors.transparent;
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () {
         if (onTapWithModifiers != null) {
           final keyboard = HardwareKeyboard.instance;

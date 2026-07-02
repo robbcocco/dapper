@@ -147,6 +147,7 @@ class _ArtistTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       onSecondaryTapUp: onSecondaryTapUp,
       child: Container(
@@ -796,6 +797,7 @@ class _AlbumSection extends ConsumerWidget {
       children: [
         // Album header
         GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () =>
               ref.read(selectedAlbumIdProvider.notifier).state = album.id,
           onSecondaryTapUp: (d) =>

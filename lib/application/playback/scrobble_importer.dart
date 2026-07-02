@@ -103,9 +103,9 @@ Future<ScrobbleImportResult> importScrobblesFor({
 
   final entries = parseScrobblerLog(contents);
   if (entries.isEmpty) {
-    // Truncate anyway — header-only or all-skipped logs would otherwise be
-    // re-scanned on every replug.
-    await truncateScrobblerLog(logFile);
+    // Rewrite (keeping only the header) — header-only or all-skipped logs
+    // would otherwise be re-scanned on every replug.
+    await rewriteScrobblerLog(logFile, contents, const []);
     return ScrobbleImportResult(
       devicePath: devicePath,
       parsed: 0,
@@ -118,40 +118,65 @@ Future<ScrobbleImportResult> importScrobblesFor({
 
   final index = await _buildLibraryIndex(settings);
 
-  int matched = 0;
-  int submitted = 0;
-  int errors = 0;
+  // Resolve every entry up-front, then submit matches in bounded-parallel.
+  // Serial await-per-entry stalled the whole import behind one round-trip
+  // each; a flooded fire-all-at-once would hammer the server. Cap at
+  // [_submitConcurrency].
+  final matchedEntries =
+      <({ScrobblerLogEntry entry, String songId})>[];
+  // Raw lines we must keep for a future retry: unmatched plays (might match
+  // after the album is transferred later) and failed submissions.
+  final keepRaws = <String>[];
   for (final entry in entries) {
     final songId = _resolveSongId(entry, index);
-    if (songId == null) continue;
-    matched++;
-    try {
-      await repo.scrobble(songId, submission: true, time: entry.timestamp);
-      submitted++;
-    } catch (e) {
-      errors++;
-      dev.log(
-          'importScrobblesFor: scrobble("$songId") failed at '
-          '${entry.timestamp.toIso8601String()} — $e');
+    if (songId == null) {
+      keepRaws.add(entry.raw);
+      continue;
+    }
+    matchedEntries.add((entry: entry, songId: songId));
+  }
+
+  var submitted = 0;
+  var errors = 0;
+  var cursor = 0;
+  Future<void> worker() async {
+    while (true) {
+      final i = cursor++;
+      if (i >= matchedEntries.length) break;
+      final m = matchedEntries[i];
+      try {
+        await repo.scrobble(m.songId, submission: true, time: m.entry.timestamp);
+        submitted++;
+      } catch (e) {
+        errors++;
+        keepRaws.add(m.entry.raw);
+        dev.log(
+            'importScrobblesFor: scrobble("${m.songId}") failed at '
+            '${m.entry.timestamp.toIso8601String()} — $e');
+      }
     }
   }
 
-  // Truncate only when every match made it through. Leaves the file intact
-  // for a retry on the next mount if the server was unreachable for some
-  // entries — better than silently dropping plays.
-  if (errors == 0) {
-    await truncateScrobblerLog(logFile);
-  }
+  await Future.wait([
+    for (var w = 0; w < _submitConcurrency; w++) worker(),
+  ]);
+
+  // Rewrite the log keeping only what we couldn't submit. Submitted rows are
+  // dropped; unmatched + errored rows survive for the next mount's retry.
+  await rewriteScrobblerLog(logFile, contents, keepRaws);
 
   return ScrobbleImportResult(
     devicePath: devicePath,
     parsed: entries.length,
-    matched: matched,
+    matched: matchedEntries.length,
     submitted: submitted,
-    unmatched: entries.length - matched,
+    unmatched: entries.length - matchedEntries.length,
     errors: errors,
   );
 }
+
+/// Max concurrent scrobble submissions during an offline-log import.
+const _submitConcurrency = 5;
 
 /// Builds a (artist, album, title) → songId map from every `.dapper.json`
 /// under the device's music root. Walks `<root>/<artist>/<album>/.dapper.json`
@@ -171,7 +196,11 @@ Future<Map<String, String>> _buildLibraryIndex(DeviceSettings settings) async {
       final album = song.album ?? '';
       index[_indexKey(artist, album, song.title)] = song.id;
       // Title-only fallback so log entries with a missing/empty album column
-      // (some firmwares blank it out for singles) still resolve.
+      // (some firmwares blank it out for singles) still resolve. putIfAbsent
+      // means the first-indexed song wins on a title collision — two distinct
+      // songs sharing a title could scrobble the wrong id. It's a last-resort
+      // match (tried only after artist+album and artist+title both miss), so
+      // an occasional misattribution beats dropping the play entirely.
       index.putIfAbsent(_indexKey('', '', song.title), () => song.id);
     }
   }

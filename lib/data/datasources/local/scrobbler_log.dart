@@ -43,6 +43,7 @@ class ScrobblerLogEntry {
     this.lengthSeconds,
     required this.timestamp,
     this.musicBrainzId,
+    required this.raw,
   });
 
   final String artist;
@@ -52,6 +53,11 @@ class ScrobblerLogEntry {
   final int? lengthSeconds;
   final DateTime timestamp;
   final String? musicBrainzId;
+
+  /// The original log line (CR-stripped) this entry was parsed from. Retained
+  /// so the importer can rewrite the log keeping only the rows it couldn't
+  /// submit, instead of blanket-truncating and losing unmatched plays.
+  final String raw;
 }
 
 /// Walks [deviceRoot] (one shallow + one nested level) looking for any of
@@ -120,6 +126,7 @@ List<ScrobblerLogEntry> parseScrobblerLog(String contents) {
           parts.length >= 8 && parts[7].trim().isNotEmpty
               ? parts[7].trim()
               : null,
+      raw: line,
     ));
   }
   return out;
@@ -134,5 +141,32 @@ Future<void> truncateScrobblerLog(File file) async {
     await file.writeAsString('', flush: true);
   } catch (e) {
     dev.log('truncateScrobblerLog: failed for ${file.path} — $e');
+  }
+}
+
+/// Rewrites [file] keeping its leading header lines plus [keepRaws] (the raw
+/// lines of entries the importer could not submit — unmatched plays and
+/// failed submissions). Everything else (submitted rows, skipped `S` rows,
+/// malformed lines) is dropped. Preserving the header matters because some
+/// firmwares only append if the `#AUDIOSCROBBLER` header is present.
+///
+/// When both the header and [keepRaws] are empty this writes an empty file,
+/// i.e. behaves like [truncateScrobblerLog].
+Future<void> rewriteScrobblerLog(
+    File file, String originalContents, List<String> keepRaws) async {
+  final buf = StringBuffer();
+  // Headers only ever lead the file; stop at the first non-`#` line.
+  for (final raw in originalContents.split('\n')) {
+    final line = raw.replaceAll('\r', '');
+    if (!line.startsWith('#')) break;
+    buf.writeln(line);
+  }
+  for (final r in keepRaws) {
+    buf.writeln(r);
+  }
+  try {
+    await file.writeAsString(buf.toString(), flush: true);
+  } catch (e) {
+    dev.log('rewriteScrobblerLog: failed for ${file.path} — $e');
   }
 }

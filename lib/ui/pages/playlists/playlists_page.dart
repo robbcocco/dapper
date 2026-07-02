@@ -65,6 +65,7 @@ class _PlaylistList extends ConsumerWidget {
       itemBuilder: (context, i) {
         final p = playlists[i];
         return GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () =>
               ref.read(selectedPlaylistIdProvider.notifier).state = p.id,
           onSecondaryTapUp: (d) =>

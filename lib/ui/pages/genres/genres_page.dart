@@ -148,6 +148,7 @@ class _GenreAlbumCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () =>
           ref.read(selectedAlbumIdProvider.notifier).state = album.id,
       child: Column(

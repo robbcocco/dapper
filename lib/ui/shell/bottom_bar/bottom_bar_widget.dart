@@ -98,6 +98,7 @@ class _NowPlaying extends ConsumerWidget {
             ),
             if (song != null) ...[
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () =>
                     ref.read(starredProvider.notifier).toggle(song.id),
                 child: Padding(
@@ -112,6 +113,7 @@ class _NowPlaying extends ConsumerWidget {
                 ),
               ),
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: () => showLyricsDialog(context, song),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -164,6 +166,7 @@ class _PlayerControls extends ConsumerWidget {
               ),
               const SizedBox(width: 4),
               GestureDetector(
+                behavior: HitTestBehavior.opaque,
                 onTap: pb.currentSong != null ? notifier.togglePlayPause : null,
                 child: Icon(
                   pb.isBuffering
@@ -408,20 +411,11 @@ class _TransferPopupContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final queue = ref.watch(transferQueueProvider);
-    final tasks =
-        queue.where((t) => t.status != TransferStatus.cancelled).toList();
+    // Progress lives in a separate provider, so byte ticks never reach this
+    // popup. The header actions and the task list each watch the queue in
+    // their own Consumer, so a status change repaints only the affected
+    // subtree while the shell + divider stay put.
     final notifier = ref.read(transferQueueProvider.notifier);
-
-    final hasActive = queue.any((t) =>
-        t.status == TransferStatus.queued ||
-        t.status == TransferStatus.inProgress);
-    final hasFailed = queue.any((t) => t.status == TransferStatus.failed);
-    final hasFinished = queue.any((t) =>
-        t.status == TransferStatus.completed ||
-        t.status == TransferStatus.failed ||
-        t.status == TransferStatus.cancelled);
-    final isPaused = notifier.isAnyDevicePaused;
 
     return SizedBox(
       width: 300,
@@ -431,8 +425,20 @@ class _TransferPopupContent extends ConsumerWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 8, 6, 6),
-            child: Row(
-              children: [
+            child: Consumer(builder: (context, ref, _) {
+              final queue = ref.watch(transferQueueProvider);
+              final hasActive = queue.any((t) =>
+                  t.status == TransferStatus.queued ||
+                  t.status == TransferStatus.inProgress);
+              final hasFailed =
+                  queue.any((t) => t.status == TransferStatus.failed);
+              final hasFinished = queue.any((t) =>
+                  t.status == TransferStatus.completed ||
+                  t.status == TransferStatus.failed ||
+                  t.status == TransferStatus.cancelled);
+              final isPaused = notifier.isAnyDevicePaused;
+              return Row(
+                children: [
                 const Expanded(
                   child: Text(
                     'Transfer Queue',
@@ -490,11 +496,16 @@ class _TransferPopupContent extends ConsumerWidget {
                         style: TextStyle(fontSize: 11)),
                   ),
               ],
-            ),
+              );
+            }),
           ),
           const Divider(height: 1, color: ColorTokens.glassBorder),
           Expanded(
-            child: Builder(builder: (_) {
+            child: Consumer(builder: (context, ref, _) {
+              final tasks = ref
+                  .watch(transferQueueProvider)
+                  .where((t) => t.status != TransferStatus.cancelled)
+                  .toList();
               if (tasks.isEmpty) {
                 return const Center(
                   child: Text('No transfers',

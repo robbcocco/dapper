@@ -372,6 +372,7 @@ class _AlbumCard extends ConsumerWidget {
     final devices = ref.watch(connectedDevicesProvider).value ?? [];
 
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: () =>
           ref.read(selectedAlbumIdProvider.notifier).state = album.id,
       onSecondaryTapUp: (d) => _showMenu(context, ref, devices, d.globalPosition),

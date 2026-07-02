@@ -14,6 +14,7 @@ import '../../domain/models/device_settings.dart';
 import '../../domain/models/playlist.dart';
 import '../../domain/models/song.dart';
 import '../../domain/models/transfer_task.dart';
+import '../../core/format/byte_format.dart';
 import '../../platform/disk_space.dart';
 import '../device/device_settings_notifier.dart';
 import '../providers/providers.dart';
@@ -24,12 +25,54 @@ import 'queue_persistence.dart';
 import 'transfer_path_resolver.dart';
 import 'zip_extractor.dart';
 
+/// Counting semaphore for bounding the post-process pool. Permits acquired by
+/// detached post-process futures so they can run concurrently with downloads
+/// without unbounded parallel FLAC-shrink isolates.
+class _Semaphore {
+  _Semaphore(this._permits);
+  int _permits;
+  final _waiters = <Completer<void>>[];
+
+  Future<void> acquire() {
+    if (_permits > 0) {
+      _permits--;
+      return Future.value();
+    }
+    final c = Completer<void>();
+    _waiters.add(c);
+    return c.future;
+  }
+
+  void release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete();
+    } else {
+      _permits++;
+    }
+  }
+}
+
+/// Max files post-processing (sidecar strip / tag clean / cover shrink) at once,
+/// independent of download concurrency so post-processing never steals a
+/// download slot. Cap bounds simultaneous shrink isolates.
+const _kPostProcessConcurrency = 3;
+
 class TransferQueueNotifier extends Notifier<List<TransferTask>> {
   static const _uuid = Uuid();
 
   final _cancelTokens = <String, CancelToken>{};
   final _runningEngines = <String>{}; // keyed by devicePath
   final _expectedSongCounts = <String, int>{};
+  // Post-process runs detached from the download slot (see _executeSong) so the
+  // engine keeps the network saturated instead of idling a slot during tag
+  // clean / cover shrink. Bounded by this shared semaphore.
+  final _postProcessSem = _Semaphore(_kPostProcessConcurrency);
+  // Completed-status flips are coalesced into one state rebuild per ~120 ms.
+  // A burst of small files finishing post-process at once would otherwise fire
+  // one O(N) list rebuild each. Group accounting (M3U / manifest) does NOT wait
+  // on this — only the visual flip is throttled.
+  final _pendingCompleted = <String>{};
+  Timer? _completedFlushTimer;
   // Single Dio instance — reuses connections, avoids repeated TLS handshakes.
   final _dio = Dio();
   // Tracks last progress-update timestamp per task to throttle state rebuilds.
@@ -75,6 +118,9 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       }
       _pauseWakers.clear();
       _pausedDevices.clear();
+      _completedFlushTimer?.cancel();
+      _completedFlushTimer = null;
+      _pendingCompleted.clear();
       _dio.close(force: true);
     });
 
@@ -384,27 +430,36 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
     return _executeSong(task);
   }
 
+  // Downloads one song, then hands the file off to a DETACHED post-process
+  // future so the engine's download slot is freed the instant bytes are on
+  // disk — the network stays saturated instead of idling a slot through tag
+  // clean / cover shrink. This future completes (freeing the slot) at
+  // download-end; post-process, the completed flip, manifest append, and group
+  // tracking all happen afterwards in _postProcessSong (or inline for the
+  // skip / failure paths that have no post-process step).
   Future<void> _executeSong(TransferTask task) async {
     _updateTask(task.id, (t) => t.copyWith(status: TransferStatus.inProgress));
 
     final cancelToken = CancelToken();
     _cancelTokens[task.id] = cancelToken;
 
-    try {
-      final settings = ref.read(deviceSettingsProvider(task.devicePath));
-      final targetPath = buildSongPath(task.song, settings);
+    final settings = ref.read(deviceSettingsProvider(task.devicePath));
+    final targetPath = buildSongPath(task.song, settings);
+    final albumFolder = p.dirname(targetPath);
 
+    try {
       if (!settings.overwriteExisting && await File(targetPath).exists()) {
-        _updateTask(
-            task.id, (t) => t.copyWith(status: TransferStatus.completed));
-        final albumFolder = p.dirname(targetPath);
+        _cancelTokens.remove(task.id);
         _appendManifest(albumFolder, task.song,
             expectedSongCount: _expectedSongCounts[albumFolder],
             filename: p.basename(targetPath));
-        return; // finally handles group tracking
+        // Already on device: no post-process needed (file isn't ours to touch).
+        _markCompleted(task.id);
+        _onGroupTaskDone(task.id);
+        return;
       }
 
-      await Directory(p.dirname(targetPath)).create(recursive: true);
+      await Directory(albumFolder).create(recursive: true);
 
       // URL is computed at execution time so transcoding-setting changes
       // applied between enqueue and run take effect on later tasks. If the
@@ -412,10 +467,7 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       // mark this task as failed rather than crashing.
       final repo = ref.read(libraryRepositoryProvider);
       if (repo == null) {
-        _updateTask(task.id, (t) => t.copyWith(
-              status: TransferStatus.failed,
-              errorMessage: 'No active server',
-            ));
+        _failSong(task.id, 'No active server');
         return;
       }
       final url = repo
@@ -450,46 +502,32 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
               (m) => {...m, task.id: (clamped, effectiveTotal)});
         },
       );
-      await removeMacOSSidecar(targetPath);
-      if (settings.autoCleanMetadata) await sanitizeFlacTags(targetPath);
-      if (settings.autoShrinkCoverArt) {
-        await shrinkFlacEmbeddedPicture(targetPath);
-      }
-
-      _updateTask(task.id,
-          (t) => t.copyWith(status: TransferStatus.completed));
-      final albumFolder = p.dirname(targetPath);
-      _appendManifest(
-        albumFolder,
-        task.song,
-        expectedSongCount: _expectedSongCounts[albumFolder],
-        filename: p.basename(targetPath),
-      );
-      // finally handles group tracking
+      // Download done — drop progress + cancel token and hand off. The task
+      // stays inProgress (so activeCount still counts it) until post-process
+      // finishes. Returning here frees the engine slot for the next download.
+      _cancelTokens.remove(task.id);
+      _lastProgressMs.remove(task.id);
+      _clearProgressEntry(task.id);
+      unawaited(_postProcessSong(task, targetPath, settings, albumFolder));
     } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) return; // already marked cancelled
-      _updateTask(task.id, (t) => t.copyWith(
-            status: TransferStatus.failed,
-            errorMessage: e.message,
-          ));
+      _cancelTokens.remove(task.id);
+      _lastProgressMs.remove(task.id);
+      _clearProgressEntry(task.id);
+      if (CancelToken.isCancel(e)) {
+        _onGroupTaskDone(task.id); // already marked cancelled by cancel()
+        return;
+      }
+      _failSong(task.id, e.message);
     } catch (e) {
+      _cancelTokens.remove(task.id);
+      _lastProgressMs.remove(task.id);
+      _clearProgressEntry(task.id);
       final msg = e.toString();
       final isPermission = msg.contains('errno = 1') ||
           msg.contains('Operation not permitted') ||
           msg.contains('errno = 13') ||
           msg.contains('Permission denied');
-      _updateTask(task.id, (t) => t.copyWith(
-            status: TransferStatus.failed,
-            errorMessage: isPermission ? 'permission_denied' : msg,
-          ));
-    } finally {
-      _cancelTokens.remove(task.id);
-      _lastProgressMs.remove(task.id);
-      ref.read(transferProgressProvider.notifier).update((m) {
-        if (!m.containsKey(task.id)) return m;
-        return Map.of(m)..remove(task.id);
-      });
-      _onGroupTaskDone(task.id);
+      _failSong(task.id, isPermission ? 'permission_denied' : msg);
     }
   }
 
@@ -590,14 +628,14 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         final required = (estimatedTotal * 11) ~/ 10;
         if (tmpFree != null && tmpFree < required) {
           _failGroup(groupId,
-              'Not enough free space in app data for ${_bytesHuman(required)} '
-              'zip (${_bytesHuman(tmpFree)} available)');
+              'Not enough free space in app data for ${formatBytes(required)} '
+              'zip (${formatBytes(tmpFree)} available)');
           return;
         }
         if (deviceFree != null && deviceFree < required) {
           _failGroup(groupId,
-              'Not enough free space on device for ${_bytesHuman(required)} '
-              '(${_bytesHuman(deviceFree)} available)');
+              'Not enough free space on device for ${formatBytes(required)} '
+              '(${formatBytes(deviceFree)} available)');
           return;
         }
       }
@@ -656,6 +694,52 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
       var hadError = false;
       String? errorMessage;
 
+      // Sibling completions are accumulated and flushed in batches rather than
+      // one `state.map().toList()` per extracted file. A large artist zip emits
+      // hundreds of 'extracted' messages; flipping each one individually is
+      // O(N) per message → O(N²) list reallocations. Coalescing to a ~150 ms
+      // throttle collapses that to one pass per tick. completedIds is still
+      // populated immediately so the post-loop failure detection is accurate.
+      final pendingFlip = <String>{};
+      final pendingProgressDrop = <String>{};
+      // Detached post-process futures for extracted siblings; awaited after the
+      // message pump so extraction and post-processing overlap (bounded by the
+      // shared pool) instead of serialising one await per extracted file.
+      final ppFutures = <Future<void>>[];
+      var lastFlushMs = 0;
+      void flushFlips({bool force = false}) {
+        if (pendingFlip.isEmpty && pendingProgressDrop.isEmpty) return;
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (!force && now - lastFlushMs < 150) return;
+        lastFlushMs = now;
+        if (pendingFlip.isNotEmpty) {
+          final ids = Set<String>.of(pendingFlip);
+          pendingFlip.clear();
+          // Only flip siblings still inProgress so a cancel that landed during
+          // post-process isn't clobbered back to completed.
+          state = state
+              .map((t) => ids.contains(t.id) &&
+                      t.status == TransferStatus.inProgress
+                  ? t.copyWith(status: TransferStatus.completed)
+                  : t)
+              .toList();
+        }
+        if (pendingProgressDrop.isNotEmpty) {
+          final drop = Set<String>.of(pendingProgressDrop);
+          pendingProgressDrop.clear();
+          ref.read(transferProgressProvider.notifier).update((m) {
+            Map<String, (int, int)>? next;
+            for (final id in drop) {
+              if (m.containsKey(id)) {
+                next ??= Map.of(m);
+                next.remove(id);
+              }
+            }
+            return next ?? m;
+          });
+        }
+      }
+
       try {
         await for (final msg in receivePort) {
           if (msg is! Map) continue;
@@ -667,30 +751,17 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
             final sibling = groupTasks
                 .firstWhere((t) => t.song.id == songId);
 
-            // Tag clean + cover-art shrink before flipping to completed so
-            // the file the user sees is the final on-device version. Both
-            // gated by per-device toggles. shrinkFlacEmbeddedPicture runs in
-            // its own isolate so it doesn't block the main isolate.
-            if (settings.autoCleanMetadata) {
-              await sanitizeFlacTags(targetPath);
-            }
-            if (settings.autoShrinkCoverArt) {
-              await shrinkFlacEmbeddedPicture(targetPath);
-            }
-
-            // Flip this one sibling — small, frequent state mutations are
-            // fine here because each row's .select() lookup makes the
-            // resulting rebuild cost proportional to one row, not N.
-            _updateTask(sibling.id,
-                (t) => t.copyWith(status: TransferStatus.completed));
+            // completedIds is set now so the post-loop failure scan never
+            // treats a still-post-processing sibling as missing. The actual
+            // tag-clean / cover-shrink runs detached in the bounded pool so it
+            // doesn't stall the message pump; the visual flip is queued only
+            // once that file's post-process finishes.
             completedIds.add(sibling.id);
-
-            // Drop just this sibling's mirror progress entry — the others
-            // stay at 100% pending their own messages.
-            ref.read(transferProgressProvider.notifier).update((m) {
-              if (!m.containsKey(sibling.id)) return m;
-              return Map.of(m)..remove(sibling.id);
-            });
+            ppFutures.add(_postProcessExtracted(targetPath, settings).then((_) {
+              pendingFlip.add(sibling.id);
+              pendingProgressDrop.add(sibling.id);
+              flushFlips();
+            }));
 
             final folder = p.dirname(targetPath);
             byFolder.putIfAbsent(folder, () => []).add(
@@ -715,6 +786,11 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         receivePort.close();
         isolate.kill(priority: Isolate.immediate);
       }
+      // Wait for every detached post-process to finish, then apply the final
+      // batch of flips so state reflects all completions before cancel /
+      // failure detection.
+      await Future.wait(ppFutures);
+      flushFlips(force: true);
 
       if (cancelToken.isCancelled) {
         state = state
@@ -793,16 +869,6 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
         } catch (_) {}
       }
     }
-  }
-
-  String _bytesHuman(int bytes) {
-    if (bytes < 1024 * 1024) {
-      return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    }
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
   }
 
   void _failGroup(String groupId, String message) {
@@ -915,6 +981,97 @@ class TransferQueueNotifier extends Notifier<List<TransferTask>> {
 
   void _updateTask(String id, TransferTask Function(TransferTask) update) {
     state = state.map((t) => t.id == id ? update(t) : t).toList();
+  }
+
+  // ── Post-process + completion plumbing ──────────────────────────────────────
+
+  /// Runs the detached post-process stage for a downloaded song: AppleDouble
+  /// sidecar strip, optional tag clean, optional cover shrink. Bounded by
+  /// [_postProcessSem] so a flood of finished downloads can't spawn unbounded
+  /// shrink isolates. Marks the task completed (throttled), appends the
+  /// manifest, and fires group tracking when done.
+  Future<void> _postProcessSong(
+    TransferTask task,
+    String targetPath,
+    DeviceSettings settings,
+    String albumFolder,
+  ) async {
+    await _postProcessSem.acquire();
+    try {
+      await removeMacOSSidecar(targetPath);
+      if (settings.autoCleanMetadata) await sanitizeFlacTags(targetPath);
+      if (settings.autoShrinkCoverArt) {
+        await shrinkFlacEmbeddedPicture(targetPath);
+      }
+    } catch (e) {
+      dev.log('TransferQueueNotifier: post-process failed for $targetPath — $e');
+    } finally {
+      _postProcessSem.release();
+    }
+    _appendManifest(
+      albumFolder,
+      task.song,
+      expectedSongCount: _expectedSongCounts[albumFolder],
+      filename: p.basename(targetPath),
+    );
+    _markCompleted(task.id);
+    _onGroupTaskDone(task.id);
+  }
+
+  /// Detached post-process for a zip-extracted file (sidecar already handled
+  /// inside the extraction isolate). Shares the same bounded pool as the
+  /// per-song path so extraction and post-processing overlap instead of
+  /// serialising message-by-message.
+  Future<void> _postProcessExtracted(
+      String targetPath, DeviceSettings settings) async {
+    await _postProcessSem.acquire();
+    try {
+      if (settings.autoCleanMetadata) await sanitizeFlacTags(targetPath);
+      if (settings.autoShrinkCoverArt) {
+        await shrinkFlacEmbeddedPicture(targetPath);
+      }
+    } catch (e) {
+      dev.log('TransferQueueNotifier: zip post-process failed for '
+          '$targetPath — $e');
+    } finally {
+      _postProcessSem.release();
+    }
+  }
+
+  void _failSong(String id, String? message) {
+    _updateTask(id, (t) => t.copyWith(
+          status: TransferStatus.failed,
+          errorMessage: message,
+        ));
+    _onGroupTaskDone(id);
+  }
+
+  void _clearProgressEntry(String id) {
+    ref.read(transferProgressProvider.notifier).update((m) {
+      if (!m.containsKey(id)) return m;
+      return Map.of(m)..remove(id);
+    });
+  }
+
+  /// Queues a completed-status flip, coalescing bursts into one rebuild per
+  /// ~120 ms. Only flips tasks still inProgress, so a cancel/fail that landed
+  /// during post-process is never clobbered back to completed.
+  void _markCompleted(String id) {
+    _pendingCompleted.add(id);
+    _completedFlushTimer ??=
+        Timer(const Duration(milliseconds: 120), _flushCompleted);
+  }
+
+  void _flushCompleted() {
+    _completedFlushTimer = null;
+    if (_pendingCompleted.isEmpty) return;
+    final ids = Set<String>.of(_pendingCompleted);
+    _pendingCompleted.clear();
+    state = state
+        .map((t) => ids.contains(t.id) && t.status == TransferStatus.inProgress
+            ? t.copyWith(status: TransferStatus.completed)
+            : t)
+        .toList();
   }
 }
 

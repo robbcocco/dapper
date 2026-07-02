@@ -45,6 +45,7 @@ dependencies:
   window_manager: ^0.5.0
   macos_window_utils: ^1.4.0
   cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1 # promoted from transitive: cache-clear in settings
 
   # Windows drive detection (win32 FFI)
   ffi: ^2.1.0
