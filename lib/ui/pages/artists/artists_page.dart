@@ -977,7 +977,7 @@ class _AlbumSection extends ConsumerWidget {
 
     if (result == 'play') {
       final full = await ref.read(albumProvider(album.id).future);
-      if (full == null || !context.mounted) return;
+      if (full == null || full.songs.isEmpty || !context.mounted) return;
       unawaited(ref.read(playbackProvider.notifier).playSong(
             full.songs.first,
             queue: full.songs,

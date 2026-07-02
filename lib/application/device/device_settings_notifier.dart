@@ -9,6 +9,11 @@ class DeviceSettingsNotifier extends Notifier<DeviceSettings> {
   DeviceSettingsNotifier(this.devicePath);
   final String devicePath;
 
+  // Set once the user saves. Stops a slow initial DB read from clobbering a
+  // save that raced ahead of it (build() returns defaults synchronously and
+  // loads the persisted row asynchronously).
+  bool _dirty = false;
+
   @override
   DeviceSettings build() {
     _loadFromDb(devicePath);
@@ -18,11 +23,12 @@ class DeviceSettingsNotifier extends Notifier<DeviceSettings> {
   Future<void> _loadFromDb(String devicePath) async {
     final db = ref.read(appDatabaseProvider);
     final row = await db.getDeviceSettings(devicePath);
-    if (row == null) return;
+    if (row == null || _dirty) return;
     state = fromRow(row);
   }
 
   Future<void> save(DeviceSettings settings) async {
+    _dirty = true;
     state = settings;
     final db = ref.read(appDatabaseProvider);
     await db.upsertDeviceSettings(DeviceSettingsTableCompanion(

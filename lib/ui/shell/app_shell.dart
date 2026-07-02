@@ -39,6 +39,17 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final creds = ref.watch(serverCredentialsProvider);
 
+    // Surface background action failures (e.g. playlist edits) as a SnackBar,
+    // then clear so the same message can fire again later.
+    ref.listen(actionErrorProvider, (_, msg) {
+      if (msg == null) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      messenger
+        ?..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(msg)));
+      ref.read(actionErrorProvider.notifier).state = null;
+    });
+
     ref.listen(connectedDevicesProvider, (_, next) {
       final devices = next.value ?? [];
       final selected = ref.read(selectedDeviceProvider);

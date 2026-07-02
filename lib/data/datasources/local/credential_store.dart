@@ -71,17 +71,19 @@ class FileCredentialStore implements CredentialStore {
   Future<void> _persist() async {
     final tmp = File('$_filePath.tmp');
     await tmp.writeAsString(jsonEncode(_cache), flush: true);
-    final target = File(_filePath);
-    await tmp.rename(target.path);
     // Mode 600 — user-only read/write — matches the protection level the
-    // keychain would have provided for the same secrets.
+    // keychain would have provided for the same secrets. Applied to the tmp
+    // file BEFORE the rename so the target is never momentarily world-readable
+    // (rename preserves the source's permissions) and a crash between the two
+    // steps can't leave a 644 secrets file behind.
     if (!Platform.isWindows) {
       try {
-        await Process.run('chmod', ['600', target.path]);
+        await Process.run('chmod', ['600', tmp.path]);
       } catch (e) {
         dev.log('FileCredentialStore: chmod failed for $_filePath — $e');
       }
     }
+    await tmp.rename(_filePath);
   }
 
   // Each operation appends to the chain so we never read a half-written file.

@@ -105,7 +105,11 @@ class SongSelectionNotifier extends Notifier<SongSelectionState> {
     final scoped = state.matches(scopeKey)
         ? state
         : SongSelectionState(scopeKey: scopeKey);
-    final anchor = scoped.anchorIndex ?? toIndex;
+    // Clamp the anchor to the current list: it may have been set against a
+    // longer list that has since shrunk (e.g. a song removed from a playlist),
+    // and an out-of-range anchor would throw a RangeError on ordered[i] below.
+    final anchor =
+        (scoped.anchorIndex ?? toIndex).clamp(0, ordered.length - 1);
     final lo = anchor < toIndex ? anchor : toIndex;
     final hi = anchor < toIndex ? toIndex : anchor;
     final next = Set<String>.from(scoped.selectedIds);

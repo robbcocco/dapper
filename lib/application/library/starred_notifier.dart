@@ -25,12 +25,19 @@ class StarredNotifier extends Notifier<Set<String>> {
   Future<void> toggle(String songId) async {
     final repo = ref.read(libraryRepositoryProvider);
     if (repo == null) return;
-    if (state.contains(songId)) {
-      await repo.unstar(songId);
-      state = {...state}..remove(songId);
-    } else {
-      await repo.star(songId);
-      state = {...state, songId};
+    final wasStarred = state.contains(songId);
+    // Optimistic flip so the heart responds instantly instead of waiting a
+    // network round-trip. Roll back if the server rejects it.
+    state = wasStarred ? ({...state}..remove(songId)) : {...state, songId};
+    try {
+      if (wasStarred) {
+        await repo.unstar(songId);
+      } else {
+        await repo.star(songId);
+      }
+    } catch (e) {
+      state = wasStarred ? {...state, songId} : ({...state}..remove(songId));
+      dev.log('StarredNotifier: toggle($songId) failed — $e');
     }
   }
 
