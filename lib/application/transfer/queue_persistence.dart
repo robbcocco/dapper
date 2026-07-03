@@ -38,14 +38,18 @@ Future<void> saveQueue(String supportDir, List<TransferTask> tasks) async {
   }
 }
 
+// Zip-group tagging is intentionally NOT persisted. A group interrupted at
+// close could be restored with its leader already completed (and therefore not
+// saved), leaving followers — which lack zipSourceId and so never become
+// "ready" — stuck queued forever. Restoring every task as a plain per-song
+// download avoids the orphan and skips re-downloading the whole album zip for
+// the handful of songs that were still pending. Mirrors retry()'s behaviour.
 Map<String, dynamic> _taskToJson(TransferTask t) => {
       'id': t.id,
       'song': _songToJson(t.song),
       'devicePath': t.devicePath,
       'status': t.status.name,
       if (t.errorMessage != null) 'errorMessage': t.errorMessage,
-      if (t.zipGroupId != null) 'zipGroupId': t.zipGroupId,
-      if (t.zipSourceId != null) 'zipSourceId': t.zipSourceId,
     };
 
 TransferTask _taskFromJson(Map<String, dynamic> j) {
@@ -62,8 +66,6 @@ TransferTask _taskFromJson(Map<String, dynamic> j) {
     devicePath: j['devicePath'] as String,
     status: status,
     errorMessage: j['errorMessage'] as String?,
-    zipGroupId: j['zipGroupId'] as String?,
-    zipSourceId: j['zipSourceId'] as String?,
   );
 }
 

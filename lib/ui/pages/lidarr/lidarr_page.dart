@@ -234,6 +234,20 @@ class _LidarrListPanelState extends ConsumerState<_LidarrListPanel> {
   }
 
   Widget _buildExisting() {
+    // Surface the raw fetch state first so a slow/unreachable Lidarr shows a
+    // spinner (then an error + retry) instead of flashing "No artists yet".
+    final asyncArtists = ref.watch(lidarrArtistsProvider);
+    if (asyncArtists.isLoading && !asyncArtists.hasValue) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 1.5));
+    }
+    if (asyncArtists.hasError && !asyncArtists.hasValue) {
+      return _LidarrError(
+        message: 'Could not reach Lidarr. Check the instance is running '
+            'and reachable.',
+        onRetry: () => ref.invalidate(lidarrArtistsProvider),
+      );
+    }
+
     final artists = ref.watch(filteredLidarrArtistsProvider);
     if (artists.isEmpty) {
       final customId = ref.watch(selectedCustomFilterIdProvider);
@@ -640,7 +654,15 @@ class _LidarrDiscographySectionState extends ConsumerState<_LidarrDiscographySec
         padding: EdgeInsets.fromLTRB(28, 20, 28, 0),
         child: LinearProgressIndicator(),
       ),
-      error: (e, _) => const SizedBox.shrink(),
+      error: (e, _) => Padding(
+        padding: const EdgeInsets.fromLTRB(28, 20, 28, 0),
+        child: _LidarrError(
+          message: 'Could not load this artist\'s discography.',
+          onRetry: () =>
+              ref.invalidate(lidarrAlbumsByArtistProvider(widget.artist.id)),
+          compact: true,
+        ),
+      ),
       data: (albums) {
         if (albums.isEmpty) return const SizedBox.shrink();
 
@@ -1088,6 +1110,53 @@ class _ReleaseRow extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── Error + retry ─────────────────────────────────────────────────────────────
+
+class _LidarrError extends StatelessWidget {
+  const _LidarrError({
+    required this.message,
+    required this.onRetry,
+    this.compact = false,
+  });
+  final String message;
+  final VoidCallback onRetry;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment:
+          compact ? CrossAxisAlignment.start : CrossAxisAlignment.center,
+      children: [
+        Icon(Icons.cloud_off_outlined,
+            size: compact ? 20 : 32, color: ColorTokens.textSecondary),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          textAlign: compact ? TextAlign.start : TextAlign.center,
+          style: const TextStyle(fontSize: 12, color: ColorTokens.textSecondary),
+        ),
+        const SizedBox(height: 10),
+        TextButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh, size: 15),
+          label: const Text('Retry'),
+          style: TextButton.styleFrom(
+            foregroundColor: ColorTokens.accent,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            minimumSize: Size.zero,
+            textStyle: const TextStyle(fontSize: 12),
+          ),
+        ),
+      ],
+    );
+    return compact
+        ? content
+        : Center(child: Padding(padding: const EdgeInsets.all(16), child: content));
   }
 }
 

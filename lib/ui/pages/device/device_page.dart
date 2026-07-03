@@ -12,6 +12,7 @@ import '../../../application/device/device_tag_sanitize.dart';
 import '../../../application/playback/scrobble_importer.dart';
 import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_queue_notifier.dart';
+import '../../../core/format/byte_format.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/transfer_task.dart';
@@ -417,15 +418,6 @@ class _ScanDialogState extends State<_ScanDialog> {
     }
   }
 
-  String _bytesHuman(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    if (bytes < 1024 * 1024 * 1024) {
-      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
-  }
-
   Future<void> _resolveFileDuplicate(FileDuplicate dup) async {
     for (final filename in dup.deletable) {
       final file = File(p.join(dup.folderPath, filename));
@@ -587,7 +579,7 @@ class _ScanDialogState extends State<_ScanDialog> {
                                     fontSize: 12,
                                     color: ColorTokens.textSecondary)),
                           ),
-                          Text(_bytesHuman(_pruneResult!.bytesFreed),
+                          Text(formatBytes(_pruneResult!.bytesFreed),
                               style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,
@@ -745,7 +737,7 @@ class _ScanDialogState extends State<_ScanDialog> {
                                     fontSize: 12,
                                     color: ColorTokens.textSecondary)),
                           ),
-                          Text(_bytesHuman(_sanitizeResult!.bytesFreed),
+                          Text(formatBytes(_sanitizeResult!.bytesFreed),
                               style: const TextStyle(
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600,

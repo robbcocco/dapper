@@ -86,6 +86,13 @@ class ErrorRetry extends StatelessWidget {
   /// errors where the title already says everything (avoids "Something went
   /// wrong / Something went wrong" duplication).
   static (IconData, String, String?) _classify(Object error) {
+    // Dio wraps anything thrown from an interceptor in a DioException; unwrap
+    // so the specific AppException cases below apply. Without this an envelope
+    // auth failure (which carries HTTP 200) would fall through to the generic
+    // "Server error (200)" branch instead of "Sign-in failed".
+    if (error is DioException && error.error is AppException) {
+      error = error.error!;
+    }
     if (error is AuthException) {
       return (
         Icons.lock_outline,

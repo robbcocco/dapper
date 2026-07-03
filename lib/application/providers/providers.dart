@@ -428,5 +428,7 @@ class _LidarrCredentials {
 final lidarrClientProvider = Provider<LidarrClient?>((ref) {
   final creds = ref.watch(lidarrCredentialsProvider).value;
   if (creds == null) return null;
-  return LidarrClient(baseUrl: creds.url, apiKey: creds.apiKey);
+  final client = LidarrClient(baseUrl: creds.url, apiKey: creds.apiKey);
+  ref.onDispose(client.dispose);
+  return client;
 });

@@ -85,9 +85,19 @@ void _pruneFolder(
   final manifest = readManifest(folder.path);
   if (manifest == null || manifest.songs.isEmpty) return;
 
+  final keepSongs =
+      manifest.songs.where((s) => librarySongIds.contains(s.id)).toList();
   final orphans =
       manifest.songs.where((s) => !librarySongIds.contains(s.id)).toList();
   if (orphans.isEmpty) return;
+
+  // Files spoken for by songs that remain in the library — NEVER delete these.
+  // The title fallback below must not remove a kept song's file just because
+  // its name resembles an orphan's title.
+  final keepFilenames = keepSongs
+      .map((s) => s.filename)
+      .whereType<String>()
+      .toSet();
 
   // Cache the audio-file scan: the fallback title-match path used to re-scan
   // the folder once per orphan, which was O(orphans × files). For an album
@@ -104,12 +114,21 @@ void _pruneFolder(
       if (candidate.existsSync()) target = candidate;
     }
 
+    // Fallback for legacy manifests without a recorded filename. Match on the
+    // EXACT title portion (after stripping any leading track/disc number),
+    // never a loose substring — otherwise orphan "Live" would delete
+    // "Live at Wembley.flac". Files belonging to a kept song are excluded.
     if (target == null) {
       final safeTitle = orphan.title.toSafeFilename();
-      for (final f in audioFiles()) {
-        if (p.basenameWithoutExtension(f.path).contains(safeTitle)) {
-          target = f;
-          break;
+      if (safeTitle.isNotEmpty) {
+        for (final f in audioFiles()) {
+          if (keepFilenames.contains(p.basename(f.path))) continue;
+          final titlePart =
+              _titlePortion(p.basenameWithoutExtension(f.path));
+          if (titlePart == safeTitle) {
+            target = f;
+            break;
+          }
         }
       }
     }
@@ -129,7 +148,20 @@ void _pruneFolder(
     }
   }
 
-  final keepSongs =
-      manifest.songs.where((s) => librarySongIds.contains(s.id)).toList();
-  writeManifest(folder.path, AlbumManifest(songs: keepSongs));
+  // Preserve expectedSongCount so artist sync-status ("full" vs "partial")
+  // keeps working after a prune.
+  writeManifest(
+    folder.path,
+    AlbumManifest(
+      songs: keepSongs,
+      expectedSongCount: manifest.expectedSongCount,
+    ),
+  );
+}
+
+/// Strips a leading track/disc-number prefix ("06 ", "06 - ", "1-06 - ") from
+/// a filename base so it can be compared against a bare song title.
+String _titlePortion(String baseNoExt) {
+  final m = RegExp(r'^\d+(?:-\d+)?(?: - | )').firstMatch(baseNoExt);
+  return m != null ? baseNoExt.substring(m.end) : baseNoExt;
 }

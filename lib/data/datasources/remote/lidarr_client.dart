@@ -8,10 +8,27 @@ class LidarrClient {
           BaseOptions(
             baseUrl: baseUrl.replaceAll(RegExp(r'/+$'), ''),
             headers: {'X-Api-Key': apiKey},
+            // Without these, an unreachable or slow Lidarr leaves every
+            // FutureProvider (artist list, discography, releases) hanging on
+            // the OS TCP timeout — the UI shows a spinner that never resolves.
+            // connectTimeout fast-fails an unreachable host; receiveTimeout is
+            // generous because interactive indexer searches (searchReleases)
+            // legitimately take up to a minute with many indexers.
+            connectTimeout: const Duration(seconds: 10),
+            sendTimeout: const Duration(seconds: 10),
+            receiveTimeout: const Duration(seconds: 60),
           ),
         );
 
   final Dio _dio;
+
+  /// Exposed for tests (swap the HTTP adapter / inspect interceptors).
+  Dio get dio => _dio;
+
+  /// Closes the underlying Dio instance. Called by the provider when this
+  /// client is replaced (instance switch / sign-out) so the connection pool
+  /// is released and in-flight requests are cancelled.
+  void dispose() => _dio.close(force: true);
 
   Future<bool> testConnection() async {
     final resp = await _dio.get<Map<String, dynamic>>('/api/v1/system/status');
@@ -43,7 +60,12 @@ class LidarrClient {
     required int rootFolderId,
     required String rootFolderPath,
     required int qualityProfileId,
+    int? metadataProfileId,
   }) async {
+    // Lidarr rejects POST /artist without a metadataProfileId (> 0). Most users
+    // never think about it, so default to the instance's first configured
+    // profile when the caller doesn't specify one.
+    final metaId = metadataProfileId ?? await _defaultMetadataProfileId();
     final resp = await _dio.post<Map<String, dynamic>>(
       '/api/v1/artist',
       data: {
@@ -52,10 +74,34 @@ class LidarrClient {
         'monitored': true,
         'rootFolderPath': rootFolderPath,
         'qualityProfileId': qualityProfileId,
+        'metadataProfileId': ?metaId,
         'addOptions': {'monitor': 'all', 'searchForMissingAlbums': false},
       },
     );
     return LidarrArtist.fromJson(resp.data!);
+  }
+
+  // Cached across adds within this client's lifetime — profiles don't change
+  // mid-session and the client is rebuilt on instance/credential change.
+  int? _cachedMetadataProfileId;
+
+  /// First metadata profile id on the instance, used as a sensible default
+  /// when adding an artist/album (Lidarr requires one). Returns null only when
+  /// the instance somehow has none or the request fails.
+  Future<int?> _defaultMetadataProfileId() async {
+    if (_cachedMetadataProfileId != null) return _cachedMetadataProfileId;
+    try {
+      final resp = await _dio.get<List<dynamic>>('/api/v1/metadataprofile');
+      for (final e in (resp.data ?? const [])) {
+        if (e is Map<String, dynamic>) {
+          final id = e['id'];
+          if (id is int && id > 0) return _cachedMetadataProfileId = id;
+        }
+      }
+    } catch (_) {
+      // Non-fatal — the add attempt will surface any error to the user.
+    }
+    return null;
   }
 
   Future<List<LidarrRootFolder>> getRootFolders() async {
@@ -111,6 +157,14 @@ class LidarrClient {
     artist['monitored'] = true;
     artist['qualityProfileId'] = qualityProfileId;
     artist['rootFolderPath'] = rootFolderPath;
+    // When the album's artist isn't in Lidarr yet it gets created here, and
+    // Lidarr requires a metadataProfileId (> 0) for that. The lookup payload
+    // usually carries 0, so fill in a real one.
+    final existingMeta = artist['metadataProfileId'];
+    if (existingMeta is! int || existingMeta <= 0) {
+      final metaId = await _defaultMetadataProfileId();
+      if (metaId != null) artist['metadataProfileId'] = metaId;
+    }
     artist['addOptions'] = {
       'monitor': 'specificAlbum',
       'searchForMissingAlbums': false,

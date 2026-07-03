@@ -168,16 +168,24 @@ class _Semaphore {
 
   Future<T> run<T>(Future<T> Function() task) async {
     if (_running >= _max) {
+      // Wait for a permit. When woken the permit is transferred to us (the
+      // releaser does NOT decrement), so we must not increment here — doing so
+      // let a fresh caller steal the just-freed slot before the waiter woke,
+      // pushing _running above _max.
       final c = Completer<void>();
       _waiters.add(c);
       await c.future;
+    } else {
+      _running++;
     }
-    _running++;
     try {
       return await task();
     } finally {
-      _running--;
-      if (_waiters.isNotEmpty) _waiters.removeAt(0).complete();
+      if (_waiters.isNotEmpty) {
+        _waiters.removeAt(0).complete(); // hand the permit to a waiter
+      } else {
+        _running--;
+      }
     }
   }
 }

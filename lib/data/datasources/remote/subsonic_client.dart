@@ -31,6 +31,15 @@ class SubsonicClient {
       connectTimeout: const Duration(seconds: 10),
       sendTimeout: const Duration(seconds: 10),
       receiveTimeout: const Duration(seconds: 30),
+      // Read the body as raw text and never auto-throw on a non-2xx status.
+      // A reverse proxy guarding Navidrome answers a rejected request with an
+      // HTML 401/403 page; the default JSON responseType would fail to parse
+      // it and surface a FormatException with the status code *lost*, so the
+      // 401/403 → AuthException mapping in the error interceptor never fired.
+      // Reading plain text keeps the status intact; the envelope is decoded
+      // explicitly in get() / the response interceptor.
+      responseType: ResponseType.plain,
+      validateStatus: (_) => true,
     ))
       ..interceptors.add(_AuthInterceptor(username, password))
       ..interceptors.add(_SubsonicErrorInterceptor());
@@ -47,11 +56,19 @@ class SubsonicClient {
     String path, {
     Map<String, dynamic>? params,
   }) async {
-    final response = await _dio.get<Map<String, dynamic>>(
-      path,
-      queryParameters: params,
-    );
-    return response.data!['subsonic-response'] as Map<String, dynamic>;
+    // The response interceptor has already thrown for auth / envelope failures
+    // and non-2xx statuses by the time we get here, so a normal return means a
+    // 2xx JSON body we can decode.
+    final response = await _dio.get<String>(path, queryParameters: params);
+    final body = response.data;
+    if (body == null || body.isEmpty) {
+      throw const SubsonicException('Empty response from server', code: 0);
+    }
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const SubsonicException('Malformed response from server', code: 0);
+    }
+    return decoded['subsonic-response'] as Map<String, dynamic>;
   }
 
   /// Closes the underlying Dio instance. Called by the provider when this
@@ -120,25 +137,58 @@ class _AuthInterceptor extends Interceptor {
 class _SubsonicErrorInterceptor extends Interceptor {
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
+    // Client uses validateStatus:(_)=>true, so non-2xx statuses land here
+    // (not onError) with the status intact. A reverse-proxy 401/403 in front
+    // of Navidrome returns a non-JSON body — map it to AuthException before we
+    // even try to parse the envelope.
+    final status = response.statusCode ?? 0;
+    if (status == 401 || status == 403) {
+      throw const AuthException();
+    }
+
+    // Body is raw text (responseType: plain). Decode the Subsonic envelope
+    // defensively — a malformed non-2xx page shouldn't crash the interceptor.
+    Map<String, dynamic>? envelope;
     final body = response.data;
-    if (body is Map<String, dynamic>) {
-      final envelope =
-          body['subsonic-response'] as Map<String, dynamic>?;
-      if (envelope != null && envelope['status'] == 'failed') {
-        final error = envelope['error'] as Map<String, dynamic>?;
-        final code = error?['code'] as int? ?? 0;
-        final message = error?['message'] as String? ?? 'Unknown error';
-        if (code == 40 || code == 41) {
-          throw const AuthException();
+    if (body is String && body.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(body);
+        if (decoded is Map<String, dynamic>) {
+          envelope = decoded['subsonic-response'] as Map<String, dynamic>?;
         }
-        throw SubsonicException(message, code: code);
+      } catch (_) {
+        // Not JSON. Handled by the status check below.
       }
     }
+
+    if (envelope != null && envelope['status'] == 'failed') {
+      final error = envelope['error'] as Map<String, dynamic>?;
+      final code = error?['code'] as int? ?? 0;
+      final message = error?['message'] as String? ?? 'Unknown error';
+      if (code == 40 || code == 41) {
+        throw const AuthException();
+      }
+      throw SubsonicException(message, code: code);
+    }
+
+    // Non-2xx without a Subsonic envelope (e.g. a 500 HTML error page).
+    if (status >= 400) {
+      throw SubsonicException('Server error ($status)', code: 0);
+    }
+
     handler.next(response);
   }
 
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) {
+    // Already classified upstream — e.g. onResponse threw an AuthException /
+    // SubsonicException for an envelope `status:"failed"` (which carries an
+    // HTTP 200, so the 401/403 branch below would miss it). Pass it through
+    // unchanged instead of masking it as a generic NetworkException.
+    if (err.error is AppException) {
+      handler.reject(err);
+      return;
+    }
     // HTTP-level auth failures (e.g. a reverse proxy in front of Navidrome
     // demanding Basic auth, or a Subsonic fork returning 401 instead of an
     // envelope `code=40`) must reach the UI as `AuthException` so the setup

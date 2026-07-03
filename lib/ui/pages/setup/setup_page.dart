@@ -121,7 +121,9 @@ class _SetupPageState extends ConsumerState<SetupPage> {
         raw.contains('Connection refused')) {
       return 'Could not reach the server. Check the URL and your network.';
     }
-    if (raw.contains('401') || raw.contains('Unauthorized')) {
+    if (raw.contains('401') ||
+        raw.contains('Unauthorized') ||
+        raw.contains('AuthException')) {
       return 'Invalid username or password.';
     }
     if (raw.contains('non-ok') || raw.contains('HandshakeException')) {

@@ -96,6 +96,35 @@ void main() {
     expect(loadQueue(tmp.path), isEmpty);
   });
 
+  test('zip-group tagging is stripped on restore so no follower is orphaned',
+      () async {
+    // A leader + follower saved together. On restore, both must come back as
+    // plain per-song tasks — a restored follower that kept zipGroupId but had
+    // no leader would never be "ready" and would sit queued forever.
+    final leader = TransferTask(
+      id: 'leader',
+      song: const Song(id: 's1', title: 'A'),
+      devicePath: '/dev/usb',
+      status: TransferStatus.inProgress,
+      zipGroupId: 'g1',
+      zipSourceId: 'album-1',
+    );
+    final follower = TransferTask(
+      id: 'follower',
+      song: const Song(id: 's2', title: 'B'),
+      devicePath: '/dev/usb',
+      status: TransferStatus.queued,
+      zipGroupId: 'g1',
+    );
+    await saveQueue(tmp.path, [leader, follower]);
+    final loaded = loadQueue(tmp.path);
+    expect(loaded, hasLength(2));
+    for (final t in loaded) {
+      expect(t.isZipMember, isFalse);
+      expect(t.isZipLeader, isFalse);
+    }
+  });
+
   test('round-trip preserves all serialised song fields', () async {
     const song = Song(
       id: 's-id',

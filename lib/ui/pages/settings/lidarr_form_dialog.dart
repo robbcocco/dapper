@@ -70,13 +70,15 @@ class _LidarrFormDialogState extends ConsumerState<_LidarrFormDialog> {
           await ref.read(lidarrRepositoryProvider).loadApiKey(widget.existing!.id) ?? '';
     }
 
+    final client = LidarrClient(baseUrl: url, apiKey: resolvedKey);
     try {
-      final client = LidarrClient(baseUrl: url, apiKey: resolvedKey);
       final ok = await client.testConnection();
       if (!ok) throw Exception('Server returned non-ok status');
     } catch (e) {
-      if (mounted) setState(() { _saving = false; _error = 'Connection failed: $e'; });
+      if (mounted) setState(() { _saving = false; _error = _friendlyError(e); });
       return;
+    } finally {
+      client.dispose();
     }
 
     final instance = _isEdit
@@ -103,6 +105,21 @@ class _LidarrFormDialogState extends ConsumerState<_LidarrFormDialog> {
     }
 
     if (mounted) Navigator.of(context).pop(true);
+  }
+
+  String _friendlyError(Object e) {
+    final raw = e.toString();
+    if (raw.contains('401') || raw.contains('Unauthorized')) {
+      return 'Invalid API key.';
+    }
+    if (raw.contains('Timeout') ||
+        raw.contains('SocketException') ||
+        raw.contains('connectionError') ||
+        raw.contains('Failed host lookup') ||
+        raw.contains('Connection refused')) {
+      return 'Couldn\'t reach Lidarr. Check the URL and that it\'s running.';
+    }
+    return 'Connection failed: $raw';
   }
 
   @override

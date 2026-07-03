@@ -1,11 +1,39 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:dapper/core/constants/api_constants.dart';
+import 'package:dapper/core/errors/app_exception.dart';
 import 'package:dapper/data/datasources/remote/subsonic_api.dart';
 import 'package:dapper/data/datasources/remote/subsonic_client.dart';
+
+/// Returns a canned response body regardless of the request, so interceptor
+/// behaviour can be exercised without a network.
+class _FakeAdapter implements HttpClientAdapter {
+  _FakeAdapter(this.body, {this.statusCode = 200});
+  final String body;
+  final int statusCode;
+
+  @override
+  Future<ResponseBody> fetch(RequestOptions options,
+          Stream<Uint8List>? requestStream, Future<dynamic>? cancelFuture) async =>
+      ResponseBody.fromString(body, statusCode, headers: {
+        Headers.contentTypeHeader: ['application/json'],
+      });
+
+  @override
+  void close({bool force = false}) {}
+}
+
+String _failEnvelope(int code, String message) => jsonEncode({
+      'subsonic-response': {
+        'status': 'failed',
+        'error': {'code': code, 'message': message},
+      },
+    });
 
 SubsonicClient _client({
   String baseUrl = 'https://music.example.com',
@@ -167,6 +195,81 @@ void main() {
       });
       expect(uri.queryParameters['submission'], 'false');
       client.dispose();
+    });
+  });
+
+  group('error interceptor classification', () {
+    test('envelope code 40 → AuthException reaches the caller (not masked)',
+        () async {
+      final client = _client();
+      client.dio.httpClientAdapter =
+          _FakeAdapter(_failEnvelope(40, 'Wrong username or password'));
+      Object? caught;
+      try {
+        await client.get(ApiConstants.ping);
+      } catch (e) {
+        caught = e;
+      }
+      // Dio wraps a thrown interceptor error in a DioException; the classified
+      // AppException must survive on `.error` (never replaced by NetworkException).
+      final appError = caught is DioException ? caught.error : caught;
+      expect(appError, isA<AuthException>());
+      client.dispose();
+    });
+
+    test('envelope code 70 → SubsonicException with the code preserved',
+        () async {
+      final client = _client();
+      client.dio.httpClientAdapter =
+          _FakeAdapter(_failEnvelope(70, 'The requested data was not found'));
+      Object? caught;
+      try {
+        await client.get(ApiConstants.ping);
+      } catch (e) {
+        caught = e;
+      }
+      final appError = caught is DioException ? caught.error : caught;
+      expect(appError, isA<SubsonicException>());
+      expect((appError as SubsonicException).code, 70);
+      client.dispose();
+    });
+
+    test('HTTP 401 → AuthException', () async {
+      final client = _client();
+      client.dio.httpClientAdapter = _FakeAdapter('nope', statusCode: 401);
+      Object? caught;
+      try {
+        await client.get(ApiConstants.ping);
+      } catch (e) {
+        caught = e;
+      }
+      final appError = caught is DioException ? caught.error : caught;
+      expect(appError, isA<AuthException>());
+      client.dispose();
+    });
+  });
+
+  group('SubsonicClient.authParams', () {
+    test('carries username, version, client, format', () {
+      final params = SubsonicClient.authParams('alice', 'p4ss');
+      expect(params['u'], 'alice');
+      expect(params['v'], ApiConstants.apiVersion);
+      expect(params['c'], ApiConstants.clientName);
+      expect(params['f'], ApiConstants.responseFormat);
+    });
+
+    test('token is md5(password + salt)', () {
+      final params = SubsonicClient.authParams('alice', 'p4ss');
+      final salt = params['s']!;
+      expect(salt, isNotEmpty);
+      expect(params['t'], _md5('p4ss$salt'));
+    });
+
+    test('each call gets a fresh salt, yielding a different token', () {
+      final a = SubsonicClient.authParams('alice', 'p4ss');
+      final b = SubsonicClient.authParams('alice', 'p4ss');
+      expect(a['s'], isNot(equals(b['s'])));
+      expect(a['t'], isNot(equals(b['t'])));
     });
   });
 }

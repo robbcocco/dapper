@@ -115,4 +115,58 @@ void main() {
       }
     });
   });
+
+  group('rewriteScrobblerLog', () {
+    late Directory tmp;
+    setUp(() async {
+      tmp = await Directory.systemTemp.createTemp('rewrite_test_');
+    });
+    tearDown(() async => tmp.delete(recursive: true));
+
+    test('keeps leading header lines plus the kept raw rows', () async {
+      const original = '#AUDIOSCROBBLER/1.1\n'
+          '#TZ/UTC\n'
+          'A\tAl\tSubmitted\t1\t200\tL\t1700000000\t\n'
+          'B\tBl\tUnmatched\t2\t200\tL\t1700000100\t\n';
+      final f = File(p.join(tmp.path, '.scrobbler.log'));
+      await f.writeAsString(original);
+
+      // Simulate: first row submitted (dropped), second kept for retry.
+      await rewriteScrobblerLog(f, original, [
+        'B\tBl\tUnmatched\t2\t200\tL\t1700000100\t',
+      ]);
+
+      final out = await f.readAsString();
+      expect(out, contains('#AUDIOSCROBBLER/1.1'));
+      expect(out, contains('#TZ/UTC'));
+      expect(out, contains('Unmatched'));
+      expect(out, isNot(contains('Submitted')));
+      // The kept row survives a re-parse.
+      expect(parseScrobblerLog(out), hasLength(1));
+      expect(parseScrobblerLog(out).single.title, 'Unmatched');
+    });
+
+    test('empty keep list leaves only the header', () async {
+      const original = '#AUDIOSCROBBLER/1.1\n'
+          'A\tAl\tGone\t1\t200\tL\t1700000000\t\n';
+      final f = File(p.join(tmp.path, '.scrobbler.log'));
+      await f.writeAsString(original);
+
+      await rewriteScrobblerLog(f, original, const []);
+
+      final out = await f.readAsString();
+      expect(out.trim(), '#AUDIOSCROBBLER/1.1');
+      expect(parseScrobblerLog(out), isEmpty);
+    });
+
+    test('no header + empty keep list produces an empty file', () async {
+      const original = 'A\tAl\tGone\t1\t200\tL\t1700000000\t\n';
+      final f = File(p.join(tmp.path, '.scrobbler.log'));
+      await f.writeAsString(original);
+
+      await rewriteScrobblerLog(f, original, const []);
+
+      expect((await f.readAsString()).trim(), '');
+    });
+  });
 }
