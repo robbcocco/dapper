@@ -265,6 +265,44 @@ final transferQueueProvider =
 final transferProgressProvider =
     StateProvider<Map<String, (int, int)>>((ref) => const {});
 
+/// Per-album transfer status, computed once per queue change. Album cards read
+/// this with a `.select(m[albumId])` O(1) lookup instead of each scanning the
+/// whole queue (which was O(visibleCards × queueLength) per change). The record
+/// is (active, queued) where `queued` is false when the album is already
+/// active.
+final queueAlbumStatusProvider =
+    Provider<Map<String, (bool active, bool queued)>>((ref) {
+  final q = ref.watch(transferQueueProvider);
+  final result = <String, (bool, bool)>{};
+  for (final t in q) {
+    final id = t.song.albumId;
+    if (id == null) continue;
+    if (t.status == TransferStatus.inProgress) {
+      result[id] = (true, false);
+    } else if (t.status == TransferStatus.queued) {
+      result.putIfAbsent(id, () => (false, true));
+    }
+  }
+  return result;
+});
+
+/// Per-song transfer status, same rationale for song-row lists. Record is
+/// (active, queued) with `queued` false when the song is already active.
+final queueSongStatusProvider =
+    Provider<Map<String, (bool active, bool queued)>>((ref) {
+  final q = ref.watch(transferQueueProvider);
+  final result = <String, (bool, bool)>{};
+  for (final t in q) {
+    final id = t.song.id;
+    if (t.status == TransferStatus.inProgress) {
+      result[id] = (true, false);
+    } else if (t.status == TransferStatus.queued) {
+      result.putIfAbsent(id, () => (false, true));
+    }
+  }
+  return result;
+});
+
 /// Transient user-facing error message, surfaced as a SnackBar by AppShell.
 /// Set by background actions that would otherwise fail silently (playlist
 /// edits, etc.). AppShell resets it to null once shown.

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../application/device/album_sync_provider.dart';
 import '../../../application/device/device_settings_notifier.dart';
 import '../../../application/library/library_notifier.dart';
 import '../../../application/library/sidebar_state.dart';
@@ -15,7 +16,6 @@ import '../../../domain/models/album.dart';
 import '../../../domain/models/artist.dart';
 import '../../../domain/models/connected_device.dart';
 import '../../../domain/models/song.dart';
-import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/error_retry.dart';
@@ -348,34 +348,40 @@ class _AlbumCard extends ConsumerWidget {
     final device = ref.watch(selectedDeviceProvider);
     final settings =
         device != null ? ref.watch(deviceSettingsProvider(device.path)) : null;
-    final albumSync = settings != null
-        ? albumSyncOnDevice(album.artist, album.name, album.year, album.songCount, settings)
-        : AlbumSyncStatus.absent;
-    // Watch only this album's transfer status. Without .select() every status
-    // change anywhere in the queue rebuilds every visible album card (and
-    // re-runs albumSyncOnDevice on each).
+    // Prefer the async-precomputed sync map (no filesystem I/O in build). While
+    // it's still resolving, fall back to the synchronous cached lookup so the
+    // dot is never missing — just computed off the render path once ready.
+    final AlbumSyncStatus albumSync;
+    if (settings == null) {
+      albumSync = AlbumSyncStatus.absent;
+    } else {
+      final syncMap = ref.watch(albumFolderSyncProvider).value;
+      if (syncMap != null) {
+        final folder =
+            buildAlbumFolder(album.artist, album.name, album.year, settings);
+        albumSync = folder != null
+            ? (syncMap[folder] ?? AlbumSyncStatus.absent)
+            : AlbumSyncStatus.absent;
+      } else {
+        albumSync = albumSyncOnDevice(
+            album.artist, album.name, album.year, album.songCount, settings);
+      }
+    }
+    // O(1) lookup into the precomputed per-album status map (built once per
+    // queue change) — .select() rebuilds this card only when its own status
+    // flips.
     final (isActive, isQueued) = ref.watch(
-      transferQueueProvider.select((q) {
-        var active = false;
-        var queued = false;
-        for (final t in q) {
-          if (t.song.albumId != album.id) continue;
-          if (t.status == TransferStatus.inProgress) {
-            active = true;
-            break;
-          }
-          if (t.status == TransferStatus.queued) queued = true;
-        }
-        return (active, !active && queued);
-      }),
+      queueAlbumStatusProvider.select((m) => m[album.id] ?? (false, false)),
     );
-    final devices = ref.watch(connectedDevicesProvider).value ?? [];
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () =>
           ref.read(selectedAlbumIdProvider.notifier).state = album.id,
-      onSecondaryTapUp: (d) => _showMenu(context, ref, devices, d.globalPosition),
+      // Read devices lazily on right-click so the card doesn't rebuild on
+      // (rare) device mount/unmount events.
+      onSecondaryTapUp: (d) => _showMenu(context, ref,
+          ref.read(connectedDevicesProvider).value ?? [], d.globalPosition),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

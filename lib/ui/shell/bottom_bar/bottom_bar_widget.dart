@@ -47,8 +47,10 @@ class _NowPlaying extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pb = ref.watch(playbackProvider);
-    final song = pb.currentSong;
+    // Only depends on the current song — select it so ~4 Hz position ticks
+    // don't rebuild the cover art + title + star row. copyWith(position:)
+    // keeps the same currentSong reference, so this stays stable across ticks.
+    final song = ref.watch(playbackProvider.select((s) => s.currentSong));
     final isStarred = song != null &&
         ref.watch(starredProvider.select((s) => s.contains(song.id)));
 
@@ -133,122 +135,155 @@ class _NowPlaying extends ConsumerWidget {
 
 // ── Player controls (center) ──────────────────────────────────────────────────
 
-class _PlayerControls extends ConsumerWidget {
+class _PlayerControls extends StatelessWidget {
   const _PlayerControls();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final pb = ref.watch(playbackProvider);
-    final notifier = ref.read(playbackProvider.notifier);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+  Widget build(BuildContext context) {
+    // Split so the ~4 Hz position ticks only rebuild the seek bar, not the
+    // transport buttons (which depend on stable fields).
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 20),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _SmallIconButton(
-                icon: Icons.shuffle,
-                active: pb.isShuffled,
-                onPressed: notifier.toggleShuffle,
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.skip_previous, size: 22),
-                color: pb.hasPrevious
-                    ? ColorTokens.textSecondary
-                    : ColorTokens.textSecondary.withValues(alpha: 0.3),
-                onPressed: pb.hasPrevious ? notifier.previous : null,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-              const SizedBox(width: 4),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: pb.currentSong != null ? notifier.togglePlayPause : null,
-                child: Icon(
-                  pb.isBuffering
-                      ? Icons.hourglass_top
-                      : pb.isPlaying
-                          ? Icons.pause_circle_filled
-                          : Icons.play_circle_filled,
-                  size: 34,
-                  color: pb.currentSong != null
-                      ? ColorTokens.textPrimary
-                      : ColorTokens.textSecondary.withValues(alpha: 0.3),
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.skip_next, size: 22),
-                color: pb.hasNext
-                    ? ColorTokens.textSecondary
-                    : ColorTokens.textSecondary.withValues(alpha: 0.3),
-                onPressed: pb.hasNext ? notifier.next : null,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-              const SizedBox(width: 4),
-              _RepeatButton(
-                  mode: pb.repeatMode, onPressed: notifier.cycleRepeat),
-            ],
-          ),
-          const SizedBox(height: 2),
-          Row(
-            children: [
-              Text(
-                pb.currentSong != null ? _fmt(pb.position) : '0:00',
-                style: const TextStyle(
-                    fontSize: 10, color: ColorTokens.textSecondary),
-              ),
-              Expanded(
-                child: SizedBox(
-                  height: 16,
-                  child: SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 2,
-                      thumbShape:
-                          const RoundSliderThumbShape(enabledThumbRadius: 5),
-                      overlayShape:
-                          const RoundSliderOverlayShape(overlayRadius: 10),
-                      activeTrackColor: ColorTokens.accent,
-                      inactiveTrackColor: ColorTokens.surfaceVariant,
-                      thumbColor: ColorTokens.accent,
-                      overlayColor: ColorTokens.accent.withValues(alpha: 0.2),
-                    ),
-                    child: Slider(
-                      value: _progress(pb),
-                      onChangeEnd: (v) => notifier.seek(pb.duration * v),
-                      onChanged: (_) {},
-                    ),
-                  ),
-                ),
-              ),
-              Text(
-                pb.currentSong != null ? _fmt(pb.duration) : '0:00',
-                style: const TextStyle(
-                    fontSize: 10, color: ColorTokens.textSecondary),
-              ),
-            ],
-          ),
+          _TransportButtons(),
+          SizedBox(height: 2),
+          _SeekBar(),
         ],
       ),
     );
   }
+}
 
-  double _progress(PlaybackState pb) {
-    final total = pb.duration.inMilliseconds;
-    if (total <= 0) return 0;
-    return (pb.position.inMilliseconds / total).clamp(0.0, 1.0);
-  }
+/// Transport buttons — rebuild only when playback flags change, not on the
+/// per-tick position stream.
+class _TransportButtons extends ConsumerWidget {
+  const _TransportButtons();
 
-  static String _fmt(Duration d) {
-    final m = d.inMinutes;
-    final s = d.inSeconds % 60;
-    return '$m:${s.toString().padLeft(2, '0')}';
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(playbackProvider.notifier);
+    final (isShuffled, hasPrevious, isBuffering, isPlaying, hasSong, hasNext,
+            repeatMode) =
+        ref.watch(playbackProvider.select((s) => (
+              s.isShuffled,
+              s.hasPrevious,
+              s.isBuffering,
+              s.isPlaying,
+              s.currentSong != null,
+              s.hasNext,
+              s.repeatMode,
+            )));
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _SmallIconButton(
+          icon: Icons.shuffle,
+          active: isShuffled,
+          onPressed: notifier.toggleShuffle,
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          icon: const Icon(Icons.skip_previous, size: 22),
+          color: hasPrevious
+              ? ColorTokens.textSecondary
+              : ColorTokens.textSecondary.withValues(alpha: 0.3),
+          onPressed: hasPrevious ? notifier.previous : null,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        ),
+        const SizedBox(width: 4),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: hasSong ? notifier.togglePlayPause : null,
+          child: Icon(
+            isBuffering
+                ? Icons.hourglass_top
+                : isPlaying
+                    ? Icons.pause_circle_filled
+                    : Icons.play_circle_filled,
+            size: 34,
+            color: hasSong
+                ? ColorTokens.textPrimary
+                : ColorTokens.textSecondary.withValues(alpha: 0.3),
+          ),
+        ),
+        const SizedBox(width: 4),
+        IconButton(
+          icon: const Icon(Icons.skip_next, size: 22),
+          color: hasNext
+              ? ColorTokens.textSecondary
+              : ColorTokens.textSecondary.withValues(alpha: 0.3),
+          onPressed: hasNext ? notifier.next : null,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+        ),
+        const SizedBox(width: 4),
+        _RepeatButton(mode: repeatMode, onPressed: notifier.cycleRepeat),
+      ],
+    );
   }
+}
+
+/// Seek bar + time labels — the only piece that genuinely tracks position, so
+/// it's isolated here to absorb the per-tick rebuilds alone.
+class _SeekBar extends ConsumerWidget {
+  const _SeekBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(playbackProvider.notifier);
+    final (position, duration, hasSong) = ref.watch(playbackProvider
+        .select((s) => (s.position, s.duration, s.currentSong != null)));
+
+    final total = duration.inMilliseconds;
+    final progress =
+        total <= 0 ? 0.0 : (position.inMilliseconds / total).clamp(0.0, 1.0);
+
+    return Row(
+      children: [
+        Text(
+          hasSong ? _fmt(position) : '0:00',
+          style: const TextStyle(fontSize: 10, color: ColorTokens.textSecondary),
+        ),
+        Expanded(
+          child: SizedBox(
+            height: 16,
+            child: SliderTheme(
+              data: SliderThemeData(
+                trackHeight: 2,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 5),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 10),
+                activeTrackColor: ColorTokens.accent,
+                inactiveTrackColor: ColorTokens.surfaceVariant,
+                thumbColor: ColorTokens.accent,
+                overlayColor: ColorTokens.accent.withValues(alpha: 0.2),
+              ),
+              child: Slider(
+                value: progress,
+                onChangeEnd: (v) => notifier.seek(duration * v),
+                onChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+        Text(
+          hasSong ? _fmt(duration) : '0:00',
+          style: const TextStyle(fontSize: 10, color: ColorTokens.textSecondary),
+        ),
+      ],
+    );
+  }
+}
+
+String _fmt(Duration d) {
+  final m = d.inMinutes;
+  final s = d.inSeconds % 60;
+  return '$m:${s.toString().padLeft(2, '0')}';
 }
 
 // ── Right panel: volume + transfer ────────────────────────────────────────────
@@ -258,7 +293,9 @@ class _RightPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final pb = ref.watch(playbackProvider);
+    // Only volume matters here — select it so position ticks don't rebuild the
+    // volume slider + transfer button every ~250 ms.
+    final volume = ref.watch(playbackProvider.select((s) => s.volume));
     final notifier = ref.read(playbackProvider.notifier);
 
     return Padding(
@@ -267,9 +304,9 @@ class _RightPanel extends ConsumerWidget {
           children: [
             // Volume icon (adaptive)
             Icon(
-              pb.volume == 0
+              volume == 0
                   ? Icons.volume_off
-                  : pb.volume < 0.5
+                  : volume < 0.5
                       ? Icons.volume_down
                       : Icons.volume_up,
               size: 14,
@@ -291,7 +328,7 @@ class _RightPanel extends ConsumerWidget {
                       ColorTokens.textSecondary.withValues(alpha: 0.15),
                 ),
                 child: Slider(
-                  value: pb.volume,
+                  value: volume,
                   onChanged: notifier.setVolume,
                 ),
               ),

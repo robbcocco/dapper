@@ -2,7 +2,12 @@ import 'package:flutter/material.dart';
 
 /// A small filled circle used to indicate device sync status.
 /// Pass [pulse] to animate the dot for in-progress states.
-class SyncDot extends StatefulWidget {
+///
+/// Static (non-pulsing) dots — the common case, one per on-device song/album —
+/// are a plain [Container] with no [AnimationController]. Only a pulsing dot
+/// allocates a ticker, so a fully-synced library list doesn't spin up hundreds
+/// of idle controllers.
+class SyncDot extends StatelessWidget {
   const SyncDot({
     super.key,
     required this.color,
@@ -15,10 +20,26 @@ class SyncDot extends StatefulWidget {
   final bool pulse;
 
   @override
-  State<SyncDot> createState() => _SyncDotState();
+  Widget build(BuildContext context) {
+    final dot = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
+    );
+    return pulse ? _PulsingDot(child: dot) : dot;
+  }
 }
 
-class _SyncDotState extends State<SyncDot> with SingleTickerProviderStateMixin {
+class _PulsingDot extends StatefulWidget {
+  const _PulsingDot({required this.child});
+  final Widget child;
+
+  @override
+  State<_PulsingDot> createState() => _PulsingDotState();
+}
+
+class _PulsingDotState extends State<_PulsingDot>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _opacity;
 
@@ -28,23 +49,10 @@ class _SyncDotState extends State<SyncDot> with SingleTickerProviderStateMixin {
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
-    );
+    )..repeat(reverse: true);
     _opacity = Tween<double>(begin: 0.35, end: 1.0).animate(
       CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
     );
-    if (widget.pulse) _ctrl.repeat(reverse: true);
-  }
-
-  @override
-  void didUpdateWidget(SyncDot oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.pulse == oldWidget.pulse) return;
-    if (widget.pulse) {
-      _ctrl.repeat(reverse: true);
-    } else {
-      _ctrl.stop();
-      _ctrl.value = 1.0;
-    }
   }
 
   @override
@@ -54,13 +62,6 @@ class _SyncDotState extends State<SyncDot> with SingleTickerProviderStateMixin {
   }
 
   @override
-  Widget build(BuildContext context) {
-    final dot = Container(
-      width: widget.size,
-      height: widget.size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color),
-    );
-    if (!widget.pulse) return dot;
-    return FadeTransition(opacity: _opacity, child: dot);
-  }
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: _opacity, child: widget.child);
 }

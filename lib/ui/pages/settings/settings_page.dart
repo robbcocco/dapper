@@ -105,7 +105,9 @@ class _GeneralTab extends ConsumerWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Controls how many songs are downloaded simultaneously to a device.',
+          'How many songs download from the server in parallel. Downloads are '
+          'staged locally, then written to the device one at a time for the '
+          'fastest, least-fragmented transfer.',
           style: TextStyle(fontSize: 11, color: ColorTokens.textSecondary),
         ),
         const SizedBox(height: 16),

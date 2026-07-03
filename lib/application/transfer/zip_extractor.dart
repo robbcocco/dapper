@@ -5,11 +5,41 @@ import 'dart:isolate';
 import 'package:archive/archive_io.dart';
 import 'package:path/path.dart' as p;
 
+import 'dart:async';
+
 import '../../domain/models/device_settings.dart';
 import '../../domain/models/song.dart';
 import 'device_manifest.dart';
 import 'flac_tag_sanitizer.dart';
 import 'transfer_path_resolver.dart';
+
+/// Minimal counting semaphore used to bound how many songs are written to the
+/// device in parallel during zip extraction. Decompression stays sequential
+/// (it reads the single shared archive stream); only the slow device writes
+/// overlap.
+class _Semaphore {
+  _Semaphore(this._permits);
+  int _permits;
+  final _waiters = <Completer<void>>[];
+
+  Future<void> acquire() {
+    if (_permits > 0) {
+      _permits--;
+      return Future.value();
+    }
+    final c = Completer<void>();
+    _waiters.add(c);
+    return c.future;
+  }
+
+  void release() {
+    if (_waiters.isNotEmpty) {
+      _waiters.removeAt(0).complete();
+    } else {
+      _permits++;
+    }
+  }
+}
 
 // ── Isolate-boundary marshalling ──────────────────────────────────────────────
 // Freezed objects can fail to cross an isolate boundary on some Dart runtime
@@ -121,6 +151,10 @@ Future<void> extractAlbumZipStreaming(Map<String, dynamic> message) async {
   final args = message['args'] as Map<String, dynamic>;
   final removeMacosSidecars =
       (args['removeMacosSidecars'] as bool?) ?? false;
+  // How many songs are written to the device at once. Decompression stays
+  // sequential (shared stream); only the slow device writes overlap.
+  final rawConcurrency = (args['concurrency'] as int?) ?? 4;
+  final concurrency = rawConcurrency < 1 ? 1 : rawConcurrency;
 
   try {
     final songs = (args['songs'] as List)
@@ -146,6 +180,10 @@ Future<void> extractAlbumZipStreaming(Map<String, dynamic> message) async {
     final rootNorm = p.normalize(settings.resolvedMusicRoot);
     final matchedIds = <String>{};
     final extractedPaths = <String>[];
+    // Bounds parallel device writes. A single Dart isolate runs the write
+    // closures cooperatively, so `extractedPaths.add` needs no locking.
+    final writeSem = _Semaphore(concurrency);
+    final pendingWrites = <Future<void>>[];
 
     final input = InputFileStream(zipPath);
     try {
@@ -173,9 +211,10 @@ Future<void> extractAlbumZipStreaming(Map<String, dynamic> message) async {
           continue;
         }
         final expectedCount = expectedPerFolder[p.dirname(target)];
+        // Reserve the song now so a duplicate archive entry can't double-write.
+        matchedIds.add(song.id);
 
         if (!settings.overwriteExisting && await File(target).exists()) {
-          matchedIds.add(song.id);
           extractedPaths.add(target);
           sendPort.send({
             'type': 'extracted',
@@ -186,37 +225,53 @@ Future<void> extractAlbumZipStreaming(Map<String, dynamic> message) async {
           continue;
         }
 
-        await Directory(p.dirname(target)).create(recursive: true);
-        final output = OutputFileStream(target);
-        var ok = false;
-        try {
-          entry.writeContent(output);
-          ok = true;
-        } catch (e) {
+        // Decompress this entry's bytes now — must happen in iteration order
+        // because every entry reads lazily from the one shared input stream.
+        final bytes = entry.readBytes();
+        // Drop the entry's own retained copy (readBytes caches it, unlike
+        // writeContent(freeMemory: true)) so a big album isn't held in RAM.
+        entry.clear();
+        if (bytes == null) {
+          matchedIds.remove(song.id);
           sendPort.send({
             'type': 'skipped',
-            'reason': 'write failed for $name: $e',
+            'reason': 'write failed for $name: no data',
           });
-        }
-        await output.close();
-        if (!ok) {
-          try {
-            final f = File(target);
-            if (await f.exists()) await f.delete();
-          } catch (_) {}
           continue;
         }
 
-        matchedIds.add(song.id);
-        extractedPaths.add(target);
-        sendPort.send({
-          'type': 'extracted',
-          'songId': song.id,
-          'targetPath': target,
-          'expectedCount': expectedCount,
-        });
+        // Hand the slow device write to the bounded pool so up to
+        // [concurrency] songs land on the device in parallel. Block here once
+        // the pool is full so we never buffer more than ~concurrency songs.
+        await writeSem.acquire();
+        pendingWrites.add(() async {
+          try {
+            await Directory(p.dirname(target)).create(recursive: true);
+            await File(target).writeAsBytes(bytes, flush: true);
+            extractedPaths.add(target);
+            sendPort.send({
+              'type': 'extracted',
+              'songId': song.id,
+              'targetPath': target,
+              'expectedCount': expectedCount,
+            });
+          } catch (e) {
+            sendPort.send({
+              'type': 'skipped',
+              'reason': 'write failed for $name: $e',
+            });
+            try {
+              final f = File(target);
+              if (await f.exists()) await f.delete();
+            } catch (_) {}
+          } finally {
+            writeSem.release();
+          }
+        }());
       }
     } finally {
+      // Let in-flight writes finish before closing the source stream.
+      await Future.wait(pendingWrites);
       await input.close();
     }
 

@@ -22,7 +22,6 @@ import '../../../domain/models/artist.dart';
 import '../../../domain/models/connected_device.dart';
 import '../../../domain/models/lidarr_models.dart';
 import '../../../domain/models/song.dart';
-import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/error_retry.dart';
@@ -776,19 +775,7 @@ class _AlbumSection extends ConsumerWidget {
     // progress-byte tick. Without .select() every progress update (200 ms)
     // would re-run albumSyncOnDevice (file I/O) for every visible album section.
     final (isAlbumActive, isAlbumQueued) = ref.watch(
-      transferQueueProvider.select((q) {
-        var active = false;
-        var queued = false;
-        for (final t in q) {
-          if (t.song.albumId != album.id) continue;
-          if (t.status == TransferStatus.inProgress) {
-            active = true;
-            break;
-          }
-          if (t.status == TransferStatus.queued) queued = true;
-        }
-        return (active, !active && queued);
-      }),
+      queueAlbumStatusProvider.select((m) => m[album.id] ?? (false, false)),
     );
     final devices = ref.watch(connectedDevicesProvider).value ?? [];
 
@@ -1036,19 +1023,7 @@ class _AlbumSongStatusRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final (isActive, isQueued) = ref.watch(
-      transferQueueProvider.select((q) {
-        var active = false;
-        var queued = false;
-        for (final t in q) {
-          if (t.song.id != song.id) continue;
-          if (t.status == TransferStatus.inProgress) {
-            active = true;
-            break;
-          }
-          if (t.status == TransferStatus.queued) queued = true;
-        }
-        return (active, !active && queued);
-      }),
+      queueSongStatusProvider.select((m) => m[song.id] ?? (false, false)),
     );
     ref.watch(manifestRevisionProvider);
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);

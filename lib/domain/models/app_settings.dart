@@ -1,5 +1,5 @@
 class AppSettings {
-  const AppSettings({this.transferConcurrency = 2});
+  const AppSettings({this.transferConcurrency = 4});
   final int transferConcurrency;
 
   AppSettings copyWith({int? transferConcurrency}) => AppSettings(
@@ -7,7 +7,7 @@ class AppSettings {
       );
 
   factory AppSettings.fromJson(Map<String, dynamic> j) => AppSettings(
-        transferConcurrency: (j['transferConcurrency'] as int?) ?? 2,
+        transferConcurrency: (j['transferConcurrency'] as int?) ?? 4,
       );
 
   Map<String, dynamic> toJson() => {

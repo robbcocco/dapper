@@ -12,7 +12,6 @@ import '../../../application/transfer/transfer_path_resolver.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/album.dart';
 import '../../../domain/models/song.dart';
-import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/error_retry.dart';
@@ -54,7 +53,10 @@ class AlbumDetailPage extends ConsumerWidget {
                           .state = null,
                     ),
                   ),
-                  SliverList(
+                  // Fixed-extent so scrolling skips per-row layout. SongRow
+                  // with showArtist:false renders at 40px.
+                  SliverFixedExtentList(
+                    itemExtent: 40,
                     delegate: SliverChildBuilderDelegate(
                       (context, i) => _AlbumSongRow(
                         song: a.songs[i],
@@ -306,19 +308,7 @@ class _AlbumSongRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final (isActive, isQueued) = ref.watch(
-      transferQueueProvider.select((q) {
-        var active = false;
-        var queued = false;
-        for (final t in q) {
-          if (t.song.id != song.id) continue;
-          if (t.status == TransferStatus.inProgress) {
-            active = true;
-            break;
-          }
-          if (t.status == TransferStatus.queued) queued = true;
-        }
-        return (active, !active && queued);
-      }),
+      queueSongStatusProvider.select((m) => m[song.id] ?? (false, false)),
     );
 
     final device = ref.watch(selectedDeviceProvider);

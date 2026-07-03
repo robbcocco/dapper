@@ -6,7 +6,9 @@ import 'package:path/path.dart' as p;
 
 import '../../domain/models/song.dart';
 
-const _kManifestFilename = '.dapper.json';
+/// Filename of the per-album manifest written on the device.
+const kManifestFilename = '.dapper.json';
+const _kManifestFilename = kManifestFilename;
 
 const _kAudioExtensions = {
   '.mp3', '.flac', '.m4a', '.aac', '.ogg', '.wav',

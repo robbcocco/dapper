@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter/foundation.dart';
@@ -278,6 +280,114 @@ void main() {
       final bFolder = byFolder.keys.firstWhere((k) => k.endsWith('/B'));
       expect(byFolder[aFolder], 2);
       expect(byFolder[bFolder], 1);
+    });
+  });
+
+  group('extractAlbumZipStreaming', () {
+    late Directory tmp;
+    setUp(() {
+      tmp = Directory.systemTemp.createTempSync('dapper_zip_stream_');
+    });
+    tearDown(() {
+      if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+    });
+
+    // Runs the streaming extractor in-process (no isolate) by handing it a
+    // SendPort, and collects every message until 'done'.
+    Future<List<Map>> runStreaming(
+      String zip,
+      List<Song> songs,
+      DeviceSettings settings, {
+      int? concurrency,
+    }) async {
+      final rp = ReceivePort();
+      final messages = <Map>[];
+      final done = Completer<void>();
+      final sub = rp.listen((msg) {
+        if (msg is! Map) return;
+        messages.add(msg);
+        if (msg['type'] == 'done') done.complete();
+      });
+      await extractAlbumZipStreaming({
+        'sendPort': rp.sendPort,
+        'args': <String, dynamic>{
+          'zipPath': zip,
+          'songs': [for (final s in songs) songToMap(s)],
+          'settings': settingsToMap(settings),
+          'removeMacosSidecars': false,
+          'concurrency': ?concurrency,
+        },
+      });
+      await done.future;
+      await sub.cancel();
+      rp.close();
+      return messages;
+    }
+
+    test('writes every matched song with parallel writes (concurrency 4)',
+        () async {
+      final device = Directory(p.join(tmp.path, 'device'))..createSync();
+      final settings = DeviceSettings(devicePath: device.path);
+      final songs = [
+        for (var i = 1; i <= 6; i++)
+          _song(id: 's$i', title: 'Track $i', track: i),
+      ];
+      final zip = _buildZip(tmp, {
+        for (var i = 1; i <= 6; i++)
+          'X/${i.toString().padLeft(2, '0')} - Track $i.flac':
+              _bulk(64 * 1024, i),
+      });
+
+      final messages = await runStreaming(zip, songs, settings, concurrency: 4);
+
+      final extracted = messages.where((m) => m['type'] == 'extracted').toList();
+      expect(extracted.map((m) => m['songId']).toSet(),
+          {'s1', 's2', 's3', 's4', 's5', 's6'});
+      // Every file landed with the full payload.
+      for (final m in extracted) {
+        expect(File(m['targetPath'] as String).lengthSync(), 64 * 1024);
+      }
+      expect(messages.last['type'], 'done');
+    });
+
+    test('concurrency=1 still writes every song', () async {
+      final device = Directory(p.join(tmp.path, 'device'))..createSync();
+      final settings = DeviceSettings(devicePath: device.path);
+      final songs = [
+        _song(id: 's1', title: 'A', track: 1),
+        _song(id: 's2', title: 'B', track: 2),
+      ];
+      final zip = _buildZip(tmp, {
+        'X/01 - A.flac': _bulk(32 * 1024, 0x11),
+        'X/02 - B.flac': _bulk(32 * 1024, 0x22),
+      });
+
+      final messages = await runStreaming(zip, songs, settings, concurrency: 1);
+      final ids = messages
+          .where((m) => m['type'] == 'extracted')
+          .map((m) => m['songId'])
+          .toSet();
+      expect(ids, {'s1', 's2'});
+    });
+
+    test('skips unmatched entries and still emits done', () async {
+      final device = Directory(p.join(tmp.path, 'device'))..createSync();
+      final settings = DeviceSettings(devicePath: device.path);
+      final songs = [_song(id: 's1', title: 'A', track: 1)];
+      final zip = _buildZip(tmp, {
+        'X/01 - A.flac': _bulk(16 * 1024, 0x01),
+        'X/99 - Unknown.flac': _bulk(16 * 1024, 0x02),
+      });
+
+      final messages = await runStreaming(zip, songs, settings, concurrency: 4);
+      expect(
+          messages
+              .where((m) => m['type'] == 'extracted')
+              .map((m) => m['songId'])
+              .toSet(),
+          {'s1'});
+      expect(messages.any((m) => m['type'] == 'skipped'), isTrue);
+      expect(messages.last['type'], 'done');
     });
   });
 }

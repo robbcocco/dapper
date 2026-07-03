@@ -18,7 +18,6 @@ import '../../../domain/models/connected_device.dart';
 import '../../../domain/models/device_settings.dart';
 import '../../../domain/models/playlist.dart';
 import '../../../domain/models/song.dart';
-import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/cover_art_image.dart';
 import '../../widgets/error_retry.dart';
@@ -232,7 +231,10 @@ class _PlaylistContent extends ConsumerWidget {
                   isOnDevice: isOnDevice,
                 ),
               ),
-              SliverList(
+              // Fixed-extent so scrolling skips per-row layout. SongRow with
+              // showArtist:true renders at 48px.
+              SliverFixedExtentList(
+                itemExtent: 48,
                 delegate: SliverChildBuilderDelegate(
                   (context, i) => _PlaylistSongRow(
                     song: playlist.songs[i],
@@ -437,22 +439,10 @@ class _PlaylistSongRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // .select keeps this row from rebuilding on every status change
-    // anywhere in the queue — only this song's transitions matter.
+    // O(1) lookup into the precomputed per-song status map; .select keeps this
+    // row from rebuilding unless its own status flips.
     final (isActive, isQueued) = ref.watch(
-      transferQueueProvider.select((q) {
-        var active = false;
-        var queued = false;
-        for (final t in q) {
-          if (t.song.id != song.id) continue;
-          if (t.status == TransferStatus.inProgress) {
-            active = true;
-            break;
-          }
-          if (t.status == TransferStatus.queued) queued = true;
-        }
-        return (active, !active && queued);
-      }),
+      queueSongStatusProvider.select((m) => m[song.id] ?? (false, false)),
     );
     ref.watch(manifestRevisionProvider);
     final isOnDevice = settings != null && songExistsOnDevice(song, settings!);

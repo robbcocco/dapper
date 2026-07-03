@@ -73,7 +73,8 @@ abstract class DeviceSettings with _$DeviceSettings {
     /// Bulk-download mode: fetches a single zip per album from
     /// `/rest/download` and extracts locally instead of one HTTP request per
     /// song. Only honoured when [transcodeFormat] is original — the bulk
-    /// endpoint does not accept transcoding parameters.
+    /// endpoint does not accept transcoding parameters. Extraction writes up to
+    /// `transferConcurrency` songs to the device in parallel.
     @Default(true) bool useZipDownload,
     /// Template string used when [filenameFormat] is [FilenameFormat.custom].
     /// Supported tokens: `{track}`, `{disc}`, `{title}`, `{artist}`,

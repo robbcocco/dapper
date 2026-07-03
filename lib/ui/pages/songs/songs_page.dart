@@ -14,7 +14,6 @@ import '../../../application/providers/providers.dart';
 import '../../../application/transfer/transfer_path_resolver.dart';
 import '../../../core/theme/color_tokens.dart';
 import '../../../domain/models/song.dart';
-import '../../../domain/models/transfer_task.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/error_retry.dart';
 import '../../widgets/select_all_shortcut.dart';
@@ -185,22 +184,10 @@ class _SongTableRow extends ConsumerWidget {
         .watch(playbackProvider.select((s) => s.currentSong?.id == song.id));
     final isStarred =
         ref.watch(starredProvider.select((s) => s.contains(song.id)));
+    // O(1) lookup into the precomputed per-song status map (built once per
+    // queue change) rather than scanning the whole queue per row.
     final (isActive, isQueued) = ref.watch(
-      transferQueueProvider.select((q) {
-        // Single pass with early exit: inProgress wins over queued, and once
-        // we've seen either we can stop scanning matching task entries.
-        var active = false;
-        var queued = false;
-        for (final t in q) {
-          if (t.song.id != song.id) continue;
-          if (t.status == TransferStatus.inProgress) {
-            active = true;
-            break;
-          }
-          if (t.status == TransferStatus.queued) queued = true;
-        }
-        return (active, !active && queued);
-      }),
+      queueSongStatusProvider.select((m) => m[song.id] ?? (false, false)),
     );
     final device = ref.watch(selectedDeviceProvider);
     final settings =
