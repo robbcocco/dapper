@@ -9,6 +9,7 @@ publish = false
 dapper-domain.workspace = true
 tokio = { workspace = true, features = ["sync", "process"] }
 tracing.workspace = true
+serde_json.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
@@ -23,7 +24,6 @@ objc2-disk-arbitration.workspace = true
 dispatch2.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-serde_json.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",

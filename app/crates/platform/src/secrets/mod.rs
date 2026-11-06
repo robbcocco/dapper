@@ -24,10 +24,10 @@ pub trait SecretBackend: Send + Sync {
     fn delete(&self, key: &str) -> Result<()>;
 }
 
-/// macOS: data-protection keychain generic passwords (service = `service`,
-/// account = key). Unsigned/ad-hoc builds lack the keychain entitlement and
-/// get `AppError::Storage` (errSecMissingEntitlement -34018) on every call.
-/// Windows: Credential Manager generic credentials named `<service>/<key>`.
+/// macOS: one generic-password item (service = `service`) in the login
+/// keychain holding all keys as a JSON map; works without a team-signed
+/// entitlement. Windows: Credential Manager generic credentials named
+/// `<service>/<key>`.
 pub fn native_secret_backend(service: &str) -> Box<dyn SecretBackend> {
     imp::native(service)
 }

@@ -24,6 +24,8 @@ pub const LEGACY_DEVICE_SETTINGS_TABLE: &str = "device_settings_table";
 pub const LEGACY_SETTINGS_FILE: &str = "app_settings.json";
 pub const LEGACY_QUEUE_FILE: &str = "transfer_queue.json";
 pub const LEGACY_CREDENTIALS_FILE: &str = "credentials.json";
+/// Windows `flutter_secure_storage` file (DPAPI-encrypted JSON map).
+pub const LEGACY_WINDOWS_SECRETS_FILE: &str = "flutter_secure_storage.dat";
 
 /// Outcome of [`import_legacy`]. Contains key names and paths only, never
 /// secret values.
@@ -273,10 +275,16 @@ fn import_secrets(
             merged.extend(secrets);
             true
         }
-        Err(e) => {
+        Err(e) if flutter_data_present(legacy_dir) => {
             report
                 .issues
                 .push(format!("secure storage: {e} (will retry next launch)"));
+            false
+        }
+        // No sign the Flutter app ever ran here: nothing worth warning about,
+        // but leave the marker unset so a build that can read it still tries.
+        Err(e) => {
+            tracing::debug!("legacy secure storage not readable, no Flutter data present: {e}");
             false
         }
     };
@@ -314,6 +322,19 @@ fn import_secrets(
         }
     }
     read_ok
+}
+
+/// Whether the Flutter app left any file behind in `legacy_dir`.
+fn flutter_data_present(legacy_dir: &Path) -> bool {
+    [
+        LEGACY_DB_FILE,
+        LEGACY_SETTINGS_FILE,
+        LEGACY_QUEUE_FILE,
+        LEGACY_CREDENTIALS_FILE,
+        LEGACY_WINDOWS_SECRETS_FILE,
+    ]
+    .iter()
+    .any(|f| legacy_dir.join(f).exists())
 }
 
 #[cfg(test)]
@@ -604,5 +625,25 @@ mod tests {
             e.creds.read("selected_server_id").unwrap().as_deref(),
             Some("new")
         );
+    }
+
+    #[test]
+    fn unreadable_secure_storage_is_quiet_without_flutter_data() {
+        let e = env();
+        let locked = |_: &Path| -> Result<HashMap<String, String>> {
+            Err(AppError::Storage("missing keychain entitlement".into()))
+        };
+        let r = import_legacy_with(&e.legacy, &e.store, e.creds.as_ref(), locked).unwrap();
+        assert!(r.issues.is_empty(), "{:?}", r.issues);
+        assert!(
+            e.store
+                .meta_get(LEGACY_SECRETS_IMPORT_MARKER)
+                .unwrap()
+                .is_none()
+        );
+
+        std::fs::write(e.legacy.join(LEGACY_WINDOWS_SECRETS_FILE), b"x").unwrap();
+        let r = import_legacy_with(&e.legacy, &e.store, e.creds.as_ref(), locked).unwrap();
+        assert_eq!(r.issues.len(), 1, "{:?}", r.issues);
     }
 }

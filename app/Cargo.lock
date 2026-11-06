@@ -813,7 +813,7 @@ checksum = "914a755b7c2d4af2bdcff7ce1739e2db9a1b81a9b07123d8015786ae03c0980d"
 
 [[package]]
 name = "dapper-api"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "bytes",
@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-app"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "dapper-api",
@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-audio"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "dapper-domain",
@@ -884,7 +884,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-devcli"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -908,7 +908,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-device"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -930,7 +930,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-domain"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-import"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "dapper-domain",
@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-library"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -972,7 +972,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-paths"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "dapper-domain",
  "regex",
@@ -982,7 +982,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-platform"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "dapper-domain",
  "dispatch2",
@@ -1002,7 +1002,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-store"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "dapper-domain",
  "dapper-platform",
@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "dapper-transfer"
-version = "2.0.0"
+version = "2.0.1"
 dependencies = [
  "dapper-api",
  "dapper-device",

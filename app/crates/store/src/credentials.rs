@@ -24,7 +24,7 @@ pub trait CredentialStore: Send + Sync {
     fn delete_all(&self) -> Result<()>;
 }
 
-/// OS keychain (macOS data-protection keychain / Windows Credential Manager).
+/// OS keychain (macOS login keychain / Windows Credential Manager).
 pub struct NativeCredentialStore {
     backend: Box<dyn SecretBackend>,
 }
@@ -131,6 +131,10 @@ impl FileCredentialStore {
 
     pub fn path(&self) -> &Path {
         &self.path
+    }
+
+    pub fn entries(&self) -> BTreeMap<String, String> {
+        self.with_map(|m| m.clone())
     }
 
     fn with_map<T>(&self, f: impl FnOnce(&mut BTreeMap<String, String>) -> T) -> T {
@@ -275,13 +279,42 @@ impl CredentialStore for FallbackCredentialStore {
     }
 }
 
+/// Moves every entry of `file` into `primary` and empties the file. File
+/// values win: they were written while `primary` was unavailable. On a
+/// `primary` failure the file is left untouched (it stays the fallback).
+pub fn move_file_entries(
+    file: &FileCredentialStore,
+    primary: &dyn CredentialStore,
+) -> Result<usize> {
+    let entries = file.entries();
+    for (key, value) in &entries {
+        primary.write(key, Some(value))?;
+    }
+    if !entries.is_empty() {
+        file.delete_all()?;
+    }
+    Ok(entries.len())
+}
+
 /// Keychain first, `credentials.v2.json` in `support_dir` as fallback.
+/// Anything left in the file by a session without keychain access is moved
+/// into the keychain once it works.
 pub fn build_default_credential_store(support_dir: &Path) -> Result<FallbackCredentialStore> {
+    let primary = NativeCredentialStore::new();
+    let file = FileCredentialStore::open(support_dir.join(CREDENTIALS_FILE))?;
+    match move_file_entries(&file, &primary) {
+        Ok(0) => {}
+        Ok(n) => tracing::info!(
+            entries = n,
+            "credentials: moved {CREDENTIALS_FILE} into the keychain"
+        ),
+        Err(e) => {
+            tracing::warn!("credentials: keychain unavailable, keeping {CREDENTIALS_FILE}: {e}")
+        }
+    }
     Ok(FallbackCredentialStore::new(
-        Box::new(NativeCredentialStore::new()),
-        Box::new(FileCredentialStore::open(
-            support_dir.join(CREDENTIALS_FILE),
-        )?),
+        Box::new(primary),
+        Box::new(file),
     ))
 }
 
@@ -634,5 +667,30 @@ pub(crate) mod tests {
         ] {
             assert_eq!(store.read(k).unwrap(), None, "{k}");
         }
+    }
+
+    #[test]
+    fn file_entries_move_into_a_working_keychain_only() {
+        let (_tmp, path, file) = file_store();
+        file.write("navidrome_servers", Some("[]")).unwrap();
+        file.write("server_password_1", Some("new")).unwrap();
+
+        let down = Arc::new(MemoryStore::failing(AppError::Storage("locked".into())));
+        assert!(move_file_entries(&file, &down).is_err());
+        assert_eq!(load_map(&path).len(), 2);
+
+        let keychain = Arc::new(MemoryStore::default());
+        keychain.write("server_password_1", Some("old")).unwrap();
+        assert_eq!(move_file_entries(&file, &keychain).unwrap(), 2);
+        assert_eq!(
+            keychain.read("server_password_1").unwrap().as_deref(),
+            Some("new")
+        );
+        assert_eq!(
+            keychain.read("navidrome_servers").unwrap().as_deref(),
+            Some("[]")
+        );
+        assert!(load_map(&path).is_empty());
+        assert_eq!(move_file_entries(&file, &keychain).unwrap(), 0);
     }
 }

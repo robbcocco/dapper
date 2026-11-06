@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::ffi::c_void;
 use std::path::Path;
+use std::sync::Mutex;
 
 use dapper_domain::{AppError, Result};
 use objc2_core_foundation::CFString;
@@ -15,6 +16,8 @@ use super::SecretBackend;
 
 const ERR_SEC_ITEM_NOT_FOUND: i32 = -25300;
 const ERR_SEC_MISSING_ENTITLEMENT: i32 = -34018;
+/// Account of the single keychain item holding every secret as a JSON map.
+const ITEM_ACCOUNT: &str = "credentials";
 const LEGACY_SERVICE: &str = "flutter_secure_storage_service";
 // Companion items of the plugin's Secure Enclave mode; never user values.
 const LEGACY_WRAPPED_PREFIX: &str = "fss.wrapped.";
@@ -25,48 +28,90 @@ const ATTR_DATA: &str = "v_Data";
 pub(super) fn native(service: &str) -> Box<dyn SecretBackend> {
     Box::new(Keychain {
         service: service.to_owned(),
-        entitled: has_keychain_entitlement(),
+        cache: Mutex::new(None),
     })
 }
 
+/// Login (file-based) keychain: unlike the data-protection keychain it needs
+/// no team-signed entitlement, so unsigned and ad-hoc builds can use it. Its
+/// ACL trusts the creating binary; another signature (each ad-hoc rebuild or
+/// update) gets one "allow access" prompt, so all secrets share one item to
+/// keep that to a single prompt.
 struct Keychain {
     service: String,
-    entitled: bool,
+    cache: Mutex<Option<BTreeMap<String, String>>>,
 }
 
 impl Keychain {
-    fn options(&self, op: &str, key: &str) -> Result<PasswordOptions> {
-        if !self.entitled {
-            return Err(missing_entitlement(op));
+    fn options(&self) -> PasswordOptions {
+        PasswordOptions::new_generic_password(&self.service, ITEM_ACCOUNT)
+    }
+
+    fn load(&self) -> Result<BTreeMap<String, String>> {
+        match generic_password(self.options()) {
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|_| AppError::Storage("Keychain item is not a credential map".into())),
+            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(BTreeMap::new()),
+            Err(e) => Err(storage_error("read", e)),
         }
-        let mut options = PasswordOptions::new_generic_password(&self.service, key);
-        options.use_protected_keychain();
-        Ok(options)
+    }
+
+    fn save(&self, map: &BTreeMap<String, String>) -> Result<()> {
+        if map.is_empty() {
+            return match delete_generic_password_options(self.options()) {
+                Err(e) if e.code() != ERR_SEC_ITEM_NOT_FOUND => Err(storage_error("delete", e)),
+                _ => Ok(()),
+            };
+        }
+        let json = serde_json::to_vec(map).expect("string map serialisation cannot fail");
+        set_generic_password_options(&json, self.options()).map_err(|e| storage_error("write", e))
+    }
+
+    /// Runs `f` on the cached map (loaded on first use); a `Some` result is
+    /// persisted before it replaces the cache.
+    fn with_map<T>(
+        &self,
+        f: impl FnOnce(&BTreeMap<String, String>) -> (T, Option<BTreeMap<String, String>>),
+    ) -> Result<T> {
+        let mut guard = self.cache.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_none() {
+            *guard = Some(self.load()?);
+        }
+        let map = guard.as_mut().expect("loaded above");
+        let (out, next) = f(map);
+        if let Some(next) = next {
+            self.save(&next)?;
+            *map = next;
+        }
+        Ok(out)
     }
 }
 
 impl SecretBackend for Keychain {
     fn get(&self, key: &str) -> Result<Option<String>> {
-        match generic_password(self.options("read", key)?) {
-            Ok(bytes) => String::from_utf8(bytes)
-                .map(Some)
-                .map_err(|_| AppError::Storage("Keychain item is not valid UTF-8".into())),
-            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(None),
-            Err(e) => Err(storage_error("read", e)),
-        }
+        self.with_map(|m| (m.get(key).cloned(), None))
     }
 
     fn set(&self, key: &str, value: &str) -> Result<()> {
-        set_generic_password_options(value.as_bytes(), self.options("write", key)?)
-            .map_err(|e| storage_error("write", e))
+        self.with_map(|m| {
+            if m.get(key).map(String::as_str) == Some(value) {
+                return ((), None);
+            }
+            let mut next = m.clone();
+            next.insert(key.to_owned(), value.to_owned());
+            ((), Some(next))
+        })
     }
 
     fn delete(&self, key: &str) -> Result<()> {
-        match delete_generic_password_options(self.options("delete", key)?) {
-            Ok(()) => Ok(()),
-            Err(e) if e.code() == ERR_SEC_ITEM_NOT_FOUND => Ok(()),
-            Err(e) => Err(storage_error("delete", e)),
-        }
+        self.with_map(|m| {
+            if !m.contains_key(key) {
+                return ((), None);
+            }
+            let mut next = m.clone();
+            next.remove(key);
+            ((), Some(next))
+        })
     }
 }
 
@@ -165,16 +210,29 @@ mod tests {
 
     // `cargo test` binaries are unsigned, so they carry no keychain entitlement.
     #[test]
-    fn unsigned_binary_gets_typed_storage_errors() {
+    fn unsigned_binary_cannot_read_flutter_keychain() {
         assert!(!has_keychain_entitlement());
-        let backend = native("com.dapper.dapper.platform-test");
-        let is_entitlement_error = |e: AppError| matches!(&e, AppError::Storage(m) if m.contains("missing keychain entitlement"));
-        assert!(is_entitlement_error(backend.get("k").unwrap_err()));
-        assert!(is_entitlement_error(backend.set("k", "v").unwrap_err()));
-        assert!(is_entitlement_error(backend.delete("k").unwrap_err()));
-        assert!(is_entitlement_error(
-            read_legacy(Path::new("/nonexistent")).unwrap_err()
+        assert!(matches!(
+            read_legacy(Path::new("/nonexistent")).unwrap_err(),
+            AppError::Storage(m) if m.contains("missing keychain entitlement")
         ));
+    }
+
+    /// Touches the real login keychain (service `com.dapper.dapper.platform-test`),
+    /// so it only runs on demand: `cargo test -p dapper-platform -- --ignored`.
+    #[test]
+    #[ignore]
+    fn unsigned_binary_round_trips_through_login_keychain() {
+        let service = "com.dapper.dapper.platform-test";
+        let backend = native(service);
+        backend.set("a", "1").unwrap();
+        backend.set("b", "2").unwrap();
+        backend.delete("a").unwrap();
+        let fresh = native(service);
+        assert_eq!(fresh.get("a").unwrap(), None);
+        assert_eq!(fresh.get("b").unwrap().as_deref(), Some("2"));
+        fresh.delete("b").unwrap();
+        assert_eq!(native(service).get("b").unwrap(), None);
     }
 
     #[test]

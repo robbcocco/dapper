@@ -9,7 +9,7 @@ mod state;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use dapper_store::{CredentialStore, Store};
+use dapper_store::{CREDENTIALS_FILE, CredentialStore, FileCredentialStore, Store};
 use tauri::{AppHandle, Manager, RunEvent};
 use tracing_subscriber::EnvFilter;
 
@@ -65,9 +65,11 @@ fn default_legacy_dir(support_dir: &std::path::Path) -> Option<PathBuf> {
 }
 
 fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let support_dir = match std::env::var_os(ENV_DATA_DIR) {
-        Some(d) if !d.is_empty() => PathBuf::from(d),
-        _ => app.path().app_data_dir()?,
+    let data_dir_override = std::env::var_os(ENV_DATA_DIR).filter(|d| !d.is_empty());
+    let isolated = data_dir_override.is_some();
+    let support_dir = match data_dir_override {
+        Some(d) => PathBuf::from(d),
+        None => app.path().app_data_dir()?,
     };
     let legacy_dir = match std::env::var_os(ENV_LEGACY_DIR) {
         Some(d) if d.is_empty() => None,
@@ -77,7 +79,13 @@ fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!(support_dir = %support_dir.display(), "starting");
 
     let store = Arc::new(Store::open(&support_dir)?);
-    let creds: Arc<dyn CredentialStore> = Arc::new(dapper_store::build_default_credential_store(&support_dir)?);
+    // The keychain is per user, not per data dir: isolated runs keep their
+    // secrets in their own folder so they never read or wipe the real ones.
+    let creds: Arc<dyn CredentialStore> = if isolated {
+        Arc::new(FileCredentialStore::open(support_dir.join(CREDENTIALS_FILE))?)
+    } else {
+        Arc::new(dapper_store::build_default_credential_store(&support_dir)?)
+    };
     // Before the transfer service restores queue.json.
     if let Some(dir) = legacy_dir {
         match dapper_store::import_legacy(&dir, &store, creds.as_ref()) {

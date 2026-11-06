@@ -26,7 +26,7 @@ npm --prefix ui run check
 
 ## Configuration
 
-Server URL, username and password are entered at first launch; passwords and API keys go to the platform keychain (unsigned builds fall back to a 0600 `credentials.v2.json`). Multiple Navidrome servers and Lidarr instances can be added from Settings. On first launch, data from the Flutter version (servers, device settings, transfer queue, app settings) is imported once.
+Server URL, username and password are entered at first launch; passwords and API keys go to the login keychain on macOS (works for unsigned builds; after each update macOS asks once to allow access — choose "Always Allow") and to Credential Manager on Windows, with a 0600 `credentials.v2.json` as fallback if the keychain is unavailable. Multiple Navidrome servers and Lidarr instances can be added from Settings. On first launch, data from the Flutter version (servers, device settings, transfer queue, app settings) is imported once.
 
 App data lives in the OS app-data directory (`~/Library/Application Support/com.dapper.dapper` on macOS, `%APPDATA%\com.dapper.dapper` on Windows): `app.db`, `settings.json`, `queue.json`, the per-server library cache under `library/`, and cover art under `covers/`. Set `DAPPER_DATA_DIR` to use another directory.
 

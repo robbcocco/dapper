@@ -90,4 +90,9 @@ jobs:
           tag_name: ${{ steps.meta.outputs.tag }}
           name: Dapper ${{ steps.meta.outputs.semver }} (build ${{ github.run_number }})
           generate_release_notes: true
-          files: dist/*
+          # upload-artifact keeps the bundle subfolders (dmg/, msi/, nsis/).
+          files: |
+            dist/**/*.dmg
+            dist/**/*.msi
+            dist/**/*.exe
+          fail_on_unmatched_files: true
