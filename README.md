@@ -4,6 +4,17 @@ Desktop app (macOS + Windows) that connects to a Navidrome server via the Subson
 
 Built with Rust (all logic, `app/crates`), Tauri 2 (window) and Svelte 5 (view layer, `app/ui`). The previous Flutter implementation (v1.2.2) is archived on the `archive/flutter-v1.2.2` branch.
 
+## Install
+
+Download the `.dmg` (macOS, Apple Silicon) or the `.msi`/`-setup.exe` (Windows) from [Releases](https://github.com/robbcocco/dapper/releases).
+
+The macOS app is ad-hoc signed, not notarized by Apple, so the first launch is blocked with "Apple could not verify 'Dapper'…". After dragging it to Applications, either:
+
+- open **System Settings → Privacy & Security**, scroll to the message about Dapper and click **Open Anyway**; or
+- run `xattr -dr com.apple.quarantine /Applications/Dapper.app` once.
+
+After each update macOS also asks once to let Dapper read its saved passwords from the keychain — choose **Always Allow**.
+
 ## Build & run
 
 Requirements: Rust (stable, via rustup) and Node 22.

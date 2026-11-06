@@ -21,6 +21,8 @@ DAPPER_DATA_DIR=/tmp/dapper-dev DAPPER_LEGACY_DIR= npm --prefix ui exec -- tauri
 
 CI: `.github/workflows/build.yml` (non-main pushes + PRs) and `release.yml` (main → GitHub release with `.dmg`/`.msi`/`.exe`), both on macOS + Windows: UI check, clippy, tests, bundle. Version comes from `app/src-tauri/tauri.conf.json`.
 
+macOS signing: `bundle.macOS.signingIdentity` is `"-"` (ad-hoc, no Apple team). That seals the whole bundle; without it only the executable carries the linker's signature and a downloaded (quarantined) app is reported as "damaged". Not notarized, so first launch needs Privacy & Security → Open Anyway (see README).
+
 ## Layout
 
 `app/crates/*`, packages `dapper-<name>`:

@@ -65,6 +65,7 @@
     ],
     "category": "Music",
     "macOS": {
+      "signingIdentity": "-",
       "minimumSystemVersion": "11.0",
       "entitlements": null
     },
