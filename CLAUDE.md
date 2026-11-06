@@ -38,7 +38,7 @@ macOS signing: `bundle.macOS.signingIdentity` is `"-"` (ad-hoc, no Apple team). 
 - `audio` — rodio/symphonia player on its own thread; codecs symphonia can't decode are streamed as server-transcoded MP3 320.
 - `import` — Spotify/Tidal matcher + import workflow.
 - `devcli` — dev-only CLI driving the crates headless; all state in `--data-dir` (credentials in a plain file there, never the keychain). E.g. `dapper-devcli --data-dir /tmp/d server add --url https://demo.navidrome.org --user demo --pass demo`, then `sync`, `search`, `transfer album <id> --device /Volumes/X --zip`, `scan --device … --prune --clean`, `play <songId>`, `drives`.
-- `app/src-tauri` (`dapper-app`) — `AppState`/session, commands per area in `src/commands/`, event forwarding, `cover://` image protocol (disk cache `covers/`).
+- `app/src-tauri` (`dapper-app`) — `AppState`/session, commands per area in `src/commands/`, event forwarding, `cover://` image protocol (disk cache `covers/`). App icon master is `icons/icon.svg` (click wheel); every other file in `icons/` is generated from it: render it to a 1024 px PNG (e.g. with `@resvg/resvg-js` in a temp dir), run `npm --prefix ui exec -- tauri icon <png>` from `app/`, then delete the generated `icons/android` and `icons/ios`.
 - `app/ui` — Svelte pages in `src/pages/<section>/`, shared widgets in `src/widgets/`, stores in `src/lib/stores/`.
 - `app/tools/goldens` + `app/fixtures` — Dart golden-fixture generator and its output (see below).
 - `app/e2e` — end-to-end scenarios for the real app.
