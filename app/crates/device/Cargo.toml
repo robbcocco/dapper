@@ -1,0 +1,26 @@
+[package]
+name = "dapper-device"
+description = "On-device file formats and maintenance: manifests, M3U, scrobbler log, FLAC clean/shrink, scan, prune, tag-clean, sync status, scrobble import."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+dapper-domain.workspace = true
+dapper-paths.workspace = true
+dapper-platform.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indexmap.workspace = true
+lru.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+image.workspace = true
+fast_image_resize.workspace = true
+jpeg-encoder.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+async-trait.workspace = true
+base64.workspace = true

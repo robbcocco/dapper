@@ -1,0 +1,75 @@
+:root {
+  /* lib/core/theme/color_tokens.dart */
+  --color-background: #1c1c1e;
+  --color-surface: #2c2c2e;
+  --color-surface-variant: #3a3a3c;
+  --color-sidebar-overlay: rgba(0, 0, 0, 0.157);
+  --color-glass-border: rgba(255, 255, 255, 0.094);
+  --color-accent: #0a84ff;
+  --color-selection-background: rgba(10, 132, 255, 0.18);
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #8e8e93;
+  --color-divider: rgba(255, 255, 255, 0.125);
+  --color-bottom-bar: rgba(28, 28, 30, 0.702);
+  --color-scrollbar-thumb: rgba(142, 142, 147, 0.3);
+
+  /* lib/core/constants/app_constants.dart */
+  --sidebar-width: 220px;
+  --artist-tree-width: 200px;
+  --bottom-bar-height: 72px;
+  --scroll-bottom-inset: calc(var(--bottom-bar-height) + 16px);
+  --album-card-size: 180px;
+
+  /* app_shell.dart floating cards */
+  --shell-margin: 8px;
+  --card-radius: 12px;
+  --bar-radius: 14px;
+  --card-shadow: 0 6px 18px -2px rgba(0, 0, 0, 0.28);
+  --dialog-radius: 14px;
+  --menu-radius: 10px;
+
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  /* Transparent so the native vibrancy/Mica shows behind the glass cards. */
+  background: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar-thumb);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}

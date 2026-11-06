@@ -1,0 +1,16 @@
+name: goldens
+description: Runs the original Dart logic from lib/ and writes golden fixtures to app/fixtures/.
+publish_to: 'none'
+
+environment:
+  sdk: ^3.12.0
+
+# Versions pinned to the Flutter app's pubspec.lock so behaviour matches.
+dependencies:
+  collection: 1.19.1
+  crypto: ^3.0.6
+  freezed_annotation: 3.1.0
+  image: 4.9.1
+  json_annotation: 4.12.0
+  meta: 1.18.0
+  path: 1.9.1

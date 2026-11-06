@@ -1,0 +1,30 @@
+[package]
+name = "dapper-transfer"
+description = "Per-device transfer engine."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+dapper-domain.workspace = true
+dapper-paths.workspace = true
+dapper-device.workspace = true
+dapper-api.workspace = true
+dapper-store.workspace = true
+dapper-platform.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+zip.workspace = true
+indexmap.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+wiremock.workspace = true
+serde_json.workspace = true

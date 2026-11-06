@@ -1,0 +1,30 @@
+[package]
+name = "dapper-devcli"
+description = "Dev-only CLI composing the Dapper backend crates without Tauri."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "dapper-devcli"
+path = "src/main.rs"
+
+[dependencies]
+dapper-domain.workspace = true
+dapper-paths.workspace = true
+dapper-device.workspace = true
+dapper-api.workspace = true
+dapper-store.workspace = true
+dapper-library.workspace = true
+dapper-transfer.workspace = true
+dapper-platform.workspace = true
+dapper-audio.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+url.workspace = true
+clap.workspace = true
+tracing-subscriber.workspace = true

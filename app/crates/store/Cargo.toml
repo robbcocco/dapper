@@ -1,0 +1,22 @@
+[package]
+name = "dapper-store"
+description = "Persistent app state: app.db, settings, credentials, transfer queue file, legacy Flutter import."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+dapper-domain.workspace = true
+dapper-platform.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+parking_lot.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

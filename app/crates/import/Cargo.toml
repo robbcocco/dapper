@@ -1,0 +1,20 @@
+[package]
+name = "dapper-import"
+description = "Spotify/Tidal playlist import: matcher and workflow."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+dapper-domain.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+parking_lot.workspace = true
+regex.workspace = true
+serde.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+async-trait.workspace = true
+parking_lot.workspace = true

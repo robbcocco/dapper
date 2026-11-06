@@ -1,146 +1,61 @@
 # Dapper — Claude Code Guide
 
-A cross-platform Flutter desktop app (macOS + Windows) that connects to a Navidrome server via the Subsonic REST API, browses the music library, and transfers music files to connected USB devices (SD cards, DAPs). UI is iTunes-inspired: sidebar + main grid + bottom player/status bar.
+Cross-platform desktop app (macOS + Windows) that connects to a Navidrome server via the Subsonic REST API, browses the music library, plays it, and transfers music to connected USB devices (SD cards, DAPs). UI is iTunes-inspired: glass sidebar + main grid + floating player/status bar.
+
+All logic is Rust (`app/crates/*`); the window is Tauri 2 and the view layer is Svelte 5 + TS (`app/ui`), which only renders state and sends commands.
+
+The original Flutter app (v1.2.2) is archived on branch **`archive/flutter-v1.2.2`**. It is the behavioural reference for the port: comments and docs that cite `lib/...dart` files refer to that branch. `feat/mtp-support` holds unported Flutter MTP work.
 
 ## Build & run
 
-Flutter binary lives at `/opt/homebrew/bin/flutter` (3.44.x via Homebrew cask).
-
 ```bash
-flutter pub get
-flutter run -d macos                       # dev (macOS)
-flutter run -d windows                     # dev (Windows)
-flutter build macos --debug                # build (macOS, debug)
-flutter build macos --release              # build (macOS, release)
-flutter build windows --release            # build (Windows, release)
-flutter analyze                            # lint + type check
-flutter test                               # run tests
+cd app
+source ~/.cargo/env
+cargo test --workspace                     # all crates (golden fixtures included)
+cargo clippy --workspace --all-targets -- -D warnings
+npm --prefix ui ci && npm --prefix ui run check
+npm --prefix ui exec -- tauri dev          # run (vite + debug app)
+npm --prefix ui exec -- tauri build        # .app/.dmg (macOS), .msi/.exe (Windows)
+DAPPER_DATA_DIR=/tmp/dapper-dev DAPPER_LEGACY_DIR= npm --prefix ui exec -- tauri dev   # isolated data, no legacy import
 ```
 
-**Code generation** (must re-run after any `@freezed`, `@JsonSerializable`, or Drift table change):
+CI: `.github/workflows/build.yml` (non-main pushes + PRs) and `release.yml` (main → GitHub release with `.dmg`/`.msi`/`.exe`), both on macOS + Windows: UI check, clippy, tests, bundle. Version comes from `app/src-tauri/tauri.conf.json`.
 
-```bash
-flutter pub run build_runner build --delete-conflicting-outputs
-# or, while iterating:
-flutter pub run build_runner watch --delete-conflicting-outputs
-```
+## Layout
 
-Forgetting this produces "part ... was not found" errors. Generated files (`*.freezed.dart`, `*.g.dart`) are committed.
+`app/crates/*`, packages `dapper-<name>`:
 
-macOS-specific prerequisites (first build only):
+- `domain` — models mirroring the Dart ones 1:1 (serde camelCase, enums as Dart `.name`), `AppError`, `LibraryReader`/`ScrobbleSink` traits.
+- `paths` — `toSafeFilename`, `buildSongPath`, templates, `matchZipEntry`, byte formatting. Must match Dart output byte-for-byte.
+- `api` — Subsonic, Navidrome native, Lidarr, MusicBrainz (≤1 req/s), Spotify/Tidal scrapers, streaming `download_to_file`.
+- `store` — `app.db` (rusqlite, `PRAGMA user_version` migrations), `settings.json`, `queue.json`, credentials (keychain → `credentials.v2.json` 0600 fallback), one-time legacy Flutter import.
+- `library` — per-server `library/<serverId>.db` cache: mark-and-sweep sync gated by `getScanStatus`, FTS5 search, windowed queries. Before the first completed sync every read falls back to the server.
+- `device` — `.dapper.json` manifests (+LRU caches, per-folder `ManifestWriter`), M3U, scrobbler log, FLAC clean/shrink, `.dapper-clean.json`, scan/prune/tag-clean/sync status/sync plan/scrobble import/browse.
+- `transfer` — per-device engine: downloads (Semaphore = `transferConcurrency`) → staging post-process (pool of 3) → single FIFO writer (bounded channel 3). Each file is written to the device once; FLAC cleaning happens in `staging/`, never on the device. M3U playlists are written only after every song in the group finishes.
+- `platform` — drive detection (macOS DiskArbitration on its own queue; Windows 2 s poll), eject, `free_bytes_at`, `._*`/xattr cleanup, secrets.
+- `audio` — rodio/symphonia player on its own thread; codecs symphonia can't decode are streamed as server-transcoded MP3 320.
+- `import` — Spotify/Tidal matcher + import workflow.
+- `devcli` — dev-only CLI driving the crates headless; all state in `--data-dir` (credentials in a plain file there, never the keychain). E.g. `dapper-devcli --data-dir /tmp/d server add --url https://demo.navidrome.org --user demo --pass demo`, then `sync`, `search`, `transfer album <id> --device /Volumes/X --zip`, `scan --device … --prune --clean`, `play <songId>`, `drives`.
+- `app/src-tauri` (`dapper-app`) — `AppState`/session, commands per area in `src/commands/`, event forwarding, `cover://` image protocol (disk cache `covers/`).
+- `app/ui` — Svelte pages in `src/pages/<section>/`, shared widgets in `src/widgets/`, stores in `src/lib/stores/`.
+- `app/tools/goldens` + `app/fixtures` — Dart golden-fixture generator and its output (see below).
+- `app/e2e` — end-to-end scenarios for the real app.
 
-```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-sudo xcodebuild -license accept
-```
+## Contracts and gotchas
 
-## Architecture
-
-Four-layer Riverpod app with a clear data flow: **UI → application (notifiers) → domain (models/contracts) → data (repositories → API/DB)**.
-
-### Directory layout
-
-- [lib/main.dart](lib/main.dart) — entry. Initializes `WindowManipulator` (macOS vibrancy), `windowManager`, and overrides `appSupportDirProvider` from `getApplicationSupportDirectory()`.
-- [lib/application/](lib/application/) — Riverpod notifiers and derived state.
-  - [providers/providers.dart](lib/application/providers/providers.dart) — central provider hub (~30 providers). Read this first.
-  - `library/`, `transfer/`, `device/`, `playback/`, `settings/`, `lidarr/` — one folder per feature; each holds its notifier(s) and supporting helpers.
-- [lib/data/](lib/data/) — concrete data layer.
-  - `datasources/remote/` — Dio HTTP clients: `subsonic_client.dart`, `subsonic_api.dart`, `navidrome_client.dart`, `lidarr_client.dart`, `musicbrainz_client.dart`.
-  - `datasources/remote/dto/` — `@freezed` + `@JsonSerializable` DTOs that map Subsonic JSON shapes.
-  - `database/` — Drift (SQLite). `app_database.dart` declares schema v3 + migrations. Tables in `database/tables/`.
-  - `repositories/` — `LibraryRepositoryImpl`, `ServerRepository`, `LidarrRepository`. DTO → domain model mapping happens here.
-- [lib/domain/](lib/domain/) — pure Dart: `models/` (mostly `@freezed`) and `repositories/` (interfaces).
-- [lib/ui/](lib/ui/) — Flutter widgets.
-  - `shell/` — `app_shell.dart` (main layout), `sidebar/`, `bottom_bar/`, `artist_tree/`.
-  - `pages/<feature>/` — one folder per section (albums, artists, songs, playlists, device, lidarr, search, settings, setup).
-  - `widgets/` — shared widgets (`cover_art_image.dart`, `song_row.dart`, dialogs).
-- [lib/core/](lib/core/) — `constants/` (API endpoints, UI dimensions), `theme/`, `errors/app_exception.dart`, `extensions/string_extensions.dart`.
-- [lib/platform/drive_detector.dart](lib/platform/drive_detector.dart) — abstract `DriveDetector` + macOS (EventChannel → Swift) and Windows (Win32 FFI polling) impls.
-- [macos/Runner/DriveDetectorPlugin.swift](macos/Runner/DriveDetectorPlugin.swift) — native macOS drive detection via `NSWorkspace` mount/unmount.
-
-### Layering rules
-
-- **DTO → domain mapping** lives in the repository implementation, not the API client. `SubsonicApi` returns `SongDto`; `LibraryRepositoryImpl` converts to `Song`.
-- **Repositories are abstract**: `LibraryRepository` (in `domain/repositories/`) defines the contract; the impl lives in `data/repositories/`. UI never imports `data/`.
-- **Stream/download/cover-art URIs** are built directly by `SubsonicClient.buildUri()` — these are passed as `Uri Function(String)` callbacks (`repo.streamUri`, `repo.downloadUri`) so consumers don't need the client.
-
-### Riverpod conventions
-
-- Single provider hub: [lib/application/providers/providers.dart](lib/application/providers/providers.dart). New top-level providers go there unless they're feature-local.
-- Naming: `SomethingNotifier extends Notifier<T>` paired with `final somethingProvider = NotifierProvider<SomethingNotifier, T>(SomethingNotifier.new);`.
-- `FutureProvider` for fetch-only data (artists, albums, playlists, search). Recompute on dep change.
-- `StateProvider` for trivial UI state (`selectedSectionProvider`, `selectedDeviceProvider`, `searchQueryProvider`, `transferProgressProvider`).
-- `AsyncNotifier` for persisted async state (e.g. `SelectedServerNotifier`, `SelectedLidarrInstanceNotifier`).
-- **No router**: navigation is `SidebarSection` enum + `selectedSectionProvider` driving `app_shell.dart`. Do not add `go_router`.
-- `appSupportDirProvider` throws by default and is overridden in `main()`. Anything that needs the support dir reads it via `ref.watch(appSupportDirProvider)`.
-
-### Subsonic auth
-
-API version `1.16.1`, client name `dapper`, format `json`. The auth interceptor (in [subsonic_client.dart](lib/data/datasources/remote/subsonic_client.dart)) adds `u`, `t`, `s`, `v`, `c`, `f` to every request:
-
-- `s` (salt) = `DateTime.now().millisecondsSinceEpoch.toRadixString(36)`
-- `t` (token) = `md5(password + salt)`
-- Errors with code 40/41 → `AuthException`; other failed responses → `SubsonicException`.
-
-`SubsonicClient.buildUri()` constructs signed URLs directly (used for `getCoverArt`, `stream`, `download`); these are passed to `CachedNetworkImage`, `just_audio`, and `Dio.download` respectively.
-
-### Persistence
-
-- **App settings** (`transferConcurrency`) → `app_settings.json` in app support dir. See [app_settings_notifier.dart](lib/application/settings/app_settings_notifier.dart).
-- **Server / Lidarr URLs + usernames** → drift DB or secure storage (see `ServerRepository`, `LidarrRepository`).
-- **Passwords / API keys** → `flutter_secure_storage` (platform keychains). One-time migration from legacy single-server keys (`server_url`/`username`/`password`) lives in `ServersNotifier._load()`.
-- **Transfer queue** → `transfer_queue.json`. Saved only when task **status** changes (not on every byte-progress tick). In-progress tasks at app close are reset to `queued` on next launch.
-- **Device settings** (folder structure, filename format, music root) → Drift `device_settings` table, one row per `devicePath`.
-- **Device manifest** (which songs are on the device) → `.dapper.json` written inside each album folder on the device. See [device_manifest.dart](lib/application/transfer/device_manifest.dart).
-
-### Transfer engine
-
-The heart of the app. [transfer_queue_notifier.dart](lib/application/transfer/transfer_queue_notifier.dart):
-
-- `_runEngine(devicePath, downloadUri)` is one engine per device; pulls up to `appSettings.transferConcurrency` tasks in parallel using a `Completer` slot pattern.
-- Path layout is computed by `buildSongPath` ([transfer_path_resolver.dart](lib/application/transfer/transfer_path_resolver.dart)) based on `DeviceSettings.folderStructure` (`artistAlbum`, `artistAlbumYear`, `artistOnly`, `flat`) and `filenameFormat` (`none`, `track`, `discTrack`).
-- Filenames are sanitized via `String.toSafeFilename()` ([string_extensions.dart](lib/core/extensions/string_extensions.dart)): path separators → `-`, FAT32-illegal chars dropped, leading/trailing dots stripped (which is what blocks `..` traversal).
-- After each download completes the album folder gets an updated `.dapper.json` manifest via `_appendManifest` (chained per-folder so writes serialise).
-- M3U playlists are written **only after every song in the group has finished** — see `_pendingPlaylistWrites` + `_onGroupTaskDone`.
-- `transferProgressProvider` is a separate `StateProvider<Map<taskId, (received, total)>>` updated at most every 200 ms, so byte-tick rebuilds don't churn the main task list.
-- On macOS the engine post-processes each file with `removeMacOSSidecar` to strip `._*` AppleDouble sidecars and xattrs (FAT32/exFAT volumes).
-
-### Drive detection
-
-- **macOS**: `MacosDriveDetector` listens to `EventChannel('com.dapper/drive_detector')`. The Swift plugin (`DriveDetectorPlugin.swift`) observes `NSWorkspace.didMountNotification` / `didUnmountNotification` and pushes drive lists.
-- **Windows**: `WindowsDriveDetector` polls every 2 s via `GetLogicalDrives` / `GetDriveType` / `GetVolumeInformation` (Win32 FFI). Filters to `DRIVE_REMOVABLE`.
-
-## macOS specifics
-
-- [main.dart](lib/main.dart) calls `WindowManipulator` (`setMaterial(underWindowBackground)`, transparent titlebar, full-size content view) to get the vibrancy look. Glass-style refinement is a known deferred task.
-- Entitlements: `network.client` + `files.user-selected.read-write` enabled in both `macos/Runner/DebugProfile.entitlements` and `Release.entitlements`. Without these, drives won't be writable and Navidrome calls will fail in release builds.
-
-## External integrations
-
-- **Navidrome (Subsonic API)** — primary backend. URL + username/password supplied by the user; multi-server supported via `ServersNotifier`.
-- **Lidarr** — optional. Used to add artists discovered via MusicBrainz lookup.
-- **MusicBrainz + Cover Art Archive** — used to find release groups and fetch album art when manually fixing album metadata. See [musicbrainz_client.dart](lib/data/datasources/remote/musicbrainz_client.dart). Static `Dio` instances are reused.
-- **Offline scrobble import** — when a device mounts, [scrobble_importer.dart](lib/application/playback/scrobble_importer.dart) scans for an AudioScrobbler 1.1 log (`.scrobbler.log`, `scrobbler.log`, `lastfm.log`, case-insensitive, root + 1 level), parses it via [scrobbler_log.dart](lib/data/datasources/local/scrobbler_log.dart), matches entries against `.dapper.json` manifests under the device's music root, submits each match through `repo.scrobble(songId, submission: true, time: <log timestamp>)`, then truncates the file. Per-device de-dupe is in-memory only (cleared on app restart). Covers Rockbox-style DAPs; vendor firmwares without a log file (Shanling M1s, Sony NW, AK) are no-ops. Result is surfaced via `scrobbleImportResultProvider` and a transient banner on the device page.
+- **IPC**: `ui/src/lib/types.ts` + `ui/src/lib/api.ts` are the authoritative command/event shapes; `cargo test -p dapper-app` fails if a command in `api.ts` isn't registered (or vice versa). Big lists never cross IPC: pages request windows (`albums_window`, `songs_window`). High-frequency data (transfer progress, player position) arrives as throttled events.
+- **Golden fixtures**: `app/fixtures/*.json` were generated by running the real Dart code. Path/filename/manifest/scrobbler/FLAC/matcher tests compare against them. Dart semantics the port reproduces: truncation by **UTF-16 code units** (255), Dart's 1:1 `toLowerCase` (`İ`→`i`), `toStringAsFixed` rounding halves up. To regenerate (Dart SDK only, no Flutter): from the repo root `git restore --source archive/flutter-v1.2.2 --worktree -- lib pubspec.yaml`, then `cd app && tools/goldens/sync.sh && dart run tools/goldens/bin/generate.dart`, then `rm -rf ../lib ../pubspec.yaml`. Output is deterministic.
+- **On-device formats** (`.dapper.json` v1, `.dapper-clean.json`, M3U, `.scrobbler.log`) and `queue.json` are byte-compatible with the Flutter app. Changing them strands existing devices. Device folder structure is effectively immutable after sync.
+- **Subsonic auth**: API `1.16.1`, client `dapper`, format `json`; every request (and every built stream/cover/download URL) gets a fresh salt and `t = md5(password + salt)`. Envelope codes 40/41 and HTTP 401/403 map to `AppError::Auth`. Built URLs preserve the base-URL path (reverse-proxy subpaths).
+- **Data dirs**: macOS `~/Library/Application Support/com.dapper.dapper` (same dir as Flutter — new files use new names: `app.db`, `settings.json`, `queue.json`, `credentials.v2.json`); Windows `%APPDATA%\com.dapper.dapper` (legacy Flutter data read from `%APPDATA%\com.dapper\dapper`). Legacy files are never modified.
+- **Keychain**: unsigned/ad-hoc builds lack the keychain entitlement, so credentials go to `credentials.v2.json` (0600). Legacy Flutter secrets live in the data-protection keychain (service `flutter_secure_storage_service`) and are only readable by a build signed with the same team + keychain group.
+- **Navidrome zips** are STORED entries with data descriptors: they can't be extracted while downloading; the engine reads them via the central directory from `tmp/zip_<group>.zip`.
+- **Logging**: never log secrets; the tracing filter keeps `stream_download=off` because that crate logs stream URLs (which carry the Subsonic token).
+- **Library sync** holds a process-wide lock per db path and uses `BEGIN IMMEDIATE`; superseded passes can't stamp or sweep rows.
+- **Cover cache** keys include both `serverId` and `coverArtId` to prevent cross-server pollution.
+- **E2E**: `app/e2e/run.sh [scenario…]` drives the real debug app (WKWebView + backend) against demo.navidrome.org with a fresh temp data dir per scenario; logs/screenshots in `/tmp/dapper-e2e/<scenario>/`. The debug-only hook (`src-tauri/src/e2e.rs`, active only with `DAPPER_E2E_SCRIPT`) injects `e2e/prelude.js` + the scenario; native context menus are answered through `window.__e2eMenu` (`ui/src/lib/menu.ts`). The device scenario creates/attaches its own FAT32 image with `hdiutil`.
+- **Dialogs/popups** must render through `ui/src/lib/portal.ts`: the bottom bar's `backdrop-filter` otherwise traps `position: fixed` children.
 
 ## House style
 
-- Match the existing terse style. Lots of one-line `final foo = ...` providers; comments only where the why is non-obvious (e.g. the throttle/sidecar/manifest chaining).
-- Keep generated files (`*.g.dart`, `*.freezed.dart`) checked in.
-- One feature folder per page under `lib/ui/pages/`. Dialogs live next to the page that owns them.
-- Avoid adding new top-level dependencies without justification — the app currently builds quickly with the existing set.
-- Lint config in [analysis_options.yaml](analysis_options.yaml) silences `invalid_annotation_target` (freezed false-positive) and `unnecessary_underscores`.
-
-## Gotchas worth remembering
-
-- After editing any `@freezed` or `@JsonSerializable` class, **re-run build_runner** — `flutter analyze` errors that look like missing parts almost always trace back to this.
-- `SubsonicClient` is rebuilt whenever credentials change; the old `Dio` instance is closed by the provider's `onDispose`.
-- The Subsonic auth interceptor and `buildUri()` both regenerate salts independently — they don't share state.
-- `SubsonicClient.buildUri()` **preserves the base-URL path** (e.g. `https://host/navidrome`) so stream / coverArt / download URLs work on reverse-proxy subpath deployments. The Dio client already concats baseUrl via `BaseOptions.baseUrl`; only the manually-built URLs were affected by the old path-clobbering bug. There's a regression test in [test/datasources/remote/subsonic_client_test.dart](test/datasources/remote/subsonic_client_test.dart).
-- The Subsonic error interceptor (`_SubsonicErrorInterceptor`) maps HTTP 401/403 to `AuthException` so reverse-proxy basic-auth failures look like sign-in errors instead of generic network errors. Subsonic envelope codes 40/41 do the same. Use `handler.reject(DioException)` from `onError`, never `throw` — Dio leaves the request half-resolved otherwise.
-- Cover-art `CachedNetworkImage` keys include both `serverId` and `coverArtId` to prevent cross-server cache pollution.
-- All hot in-memory caches are LRU-bounded with promote-on-read: `SubsonicApi._coverArtUriCache` (1024 entries), `device_manifest.dart`'s `_manifestCache` (4096) and `_folderExistsCache` (8192), and `LibraryRepositoryImpl._albumCache` (50). Cap exists so huge libraries don't grow memory across long sessions.
-- `searchResultsProvider` is `FutureProvider.autoDispose.family<…, String>` — every keystroke spawns a new family entry. Without autoDispose long typing sessions retain every intermediate result. Don't drop autoDispose without also debouncing the search field.
-- Device folder structure is effectively immutable after sync — changing `DeviceSettings.folderStructure` mid-library would orphan the existing files.
-- macOS drive detector is event-driven (`async*` from EventChannel); Windows is a polling `async*` that runs forever once started — there is no explicit cancellation.
-- `pruneDevice`'s "songs removed" count only increments for orphans actually deleted from disk — manifest entries whose files were already gone don't pad the total. The orphan loop caches the folder's audio-file listing so the title-match fallback stays O(N), not O(N²).
-- `PlaybackNotifier.playArtist` sets `isBuffering=true` then fetches every album in parallel via `Future.wait`. Serial fetches used to make "play artist" feel frozen on deep discographies.
+Terse code; comments only where the why is non-obvious. Port behaviour from the archived Dart exactly unless a deliberate fix is documented. No stubs or TODOs. Avoid new dependencies without justification; workspace deps live in `app/Cargo.toml` `[workspace.dependencies]`.

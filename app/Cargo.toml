@@ -1,0 +1,73 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "src-tauri"]
+
+[workspace.package]
+version = "2.0.0"
+edition = "2024"
+
+[workspace.dependencies]
+dapper-domain = { path = "crates/domain" }
+dapper-paths = { path = "crates/paths" }
+dapper-device = { path = "crates/device" }
+dapper-api = { path = "crates/api" }
+dapper-store = { path = "crates/store" }
+dapper-library = { path = "crates/library" }
+dapper-transfer = { path = "crates/transfer" }
+dapper-platform = { path = "crates/platform" }
+dapper-audio = { path = "crates/audio" }
+dapper-import = { path = "crates/import" }
+
+tokio = { version = "1.54", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = "0.1"
+futures = "0.3"
+bytes = "1"
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "gzip", "stream", "multipart", "cookies"] }
+url = "2.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
+fast_image_resize = { version = "6", features = ["image"] }
+jpeg-encoder = "0.7"
+md-5 = "0.11"
+hex = "0.4"
+uuid = { version = "1.29", features = ["v4", "serde"] }
+rand = "0.10"
+regex = "1.13"
+lru = "0.19"
+indexmap = { version = "2", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+parking_lot = "0.13"
+async-trait = "0.1"
+base64 = "0.23"
+libc = "0.2"
+xattr = "1.7"
+security-framework = "3.7"
+windows = "0.62"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-disk-arbitration = "0.3"
+dispatch2 = "0.3"
+objc2-core-foundation = "0.3"
+rodio = { version = "0.23", default-features = false, features = ["playback", "symphonia-all"] }
+stream-download = { version = "0.24", features = ["reqwest-rustls"] }
+clap = { version = "4.6", features = ["derive"] }
+tempfile = "3.27"
+wiremock = "0.6"
+tauri = { version = "2.12", features = ["macos-private-api"] }
+tauri-build = { version = "2.7", features = [] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 2

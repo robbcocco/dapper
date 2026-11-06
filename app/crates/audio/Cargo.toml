@@ -1,0 +1,21 @@
+[package]
+name = "dapper-audio"
+description = "Pure-Rust playback engine."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+dapper-domain.workspace = true
+rand.workspace = true
+reqwest.workspace = true
+rodio = { workspace = true, features = ["tracing"] }
+serde = { workspace = true, features = ["rc"] }
+stream-download.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+async-trait.workspace = true
+wiremock.workspace = true

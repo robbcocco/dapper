@@ -1,0 +1,14 @@
+[package]
+name = "dapper-paths"
+description = "Device path layout, filename templates, filename sanitising, zip entry matching."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+dapper-domain.workspace = true
+regex.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true

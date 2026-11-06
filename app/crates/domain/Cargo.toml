@@ -1,0 +1,12 @@
+[package]
+name = "dapper-domain"
+description = "Shared models, enums, errors and cross-crate traits."
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
